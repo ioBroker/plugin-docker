@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+    mysql:
+        image: mysql:lts
+        labels:
+            - 'iobEnabled=${config.dockerMysql.enabled:-true}'
+            - 'iobStopOnUnload=${config.dockerMysql.stopIfInstanceStopped:-true}'
+            - 'iobBackup=mysql_data'
+        # Bind ONLY to localhost as in your config (safe for dev/admin access)
+        ports:
+            - '${config.dockerMysql.bind:-127.0.0.1}:${config_dockerMysql_port:-3306}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${config.dockerMysql.rootPassword:-root_iobroker}'
+            MYSQL_DATABASE: 'iobroker'
+            MYSQL_USER: 'iobroker'
+            MYSQL_PASSWORD: 'iobroker'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 'false'
+        volumes:
+            - mysql_data:/var/lib/mysql
+            - mysql_config:/etc/mysql/conf.d
+        networks:
+            - true
+        restart: unless-stopped
+
+    phpmyadmin:
+        image: phpmyadmin:latest
+        labels:
+          - 'iobEnabled=${config.dockerMysql.enabled:-true}'
+          - 'iobStopOnUnload=${config.dockerMysql.stopIfInstanceStopped:-true}'
+          - 'iobBackup=mysql_data'
+        container_name: phpmyadmin
+        depends_on:
+            - mysql
+        # By default bind on all interfaces (per your config comment)
+        ports:
+            - '${config.dockerPhpMyAdmin.bind:-0.0.0.0}:${config_dockerPhpMyAdmin_port:-8080}:8080'
+        environment:
+            # phpMyAdmin connects to the mysql service by its DNS name on the shared network
+            PMA_HOST: '${config.dockerMysql.bind:-mysql}'
+            PMA_PORT: '${config.dockerMysql.port:-3306}'
+            MYSQL_ROOT_PASSWORD: '${config.dockerMysql.rootPassword:-root_iobroker}'
+            MYSQL_USER: 'iobroker'
+            MYSQL_PASSWORD: 'iobroker'
+            # Optional: allow picking a server manually
+            # PMA_ARBITRARY: "1"
+            # If you need an absolute URI, set it via .env or uncomment and fill:
+            PMA_ABSOLUTE_URI: '${config.dockerPhpMyAdmin.absoluteUri:-}'
+        networks:
+            - true
+        restart: unless-stopped
+
+networks:
+    true:
+        driver: bridge
+
+volumes:
+    mysql_data:
+    mysql_config:

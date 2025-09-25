@@ -1,0 +1,62 @@
+version: '3.9'
+
+services:
+    influx:
+        image: influxdb:2
+        labels:
+            - 'iobEnabled=${config.dockerInflux.enabled:-true}'
+            - 'iobStopOnUnload=${config.dockerInflux.stopIfInstanceStopped:-true}'
+            - 'iobBackup=flux_data'
+        container_name: influx
+        ports:
+            - '${config.dockerInflux.bind:-127.0.0.1}:${config_dockerInflux_port:-8086}:8086'
+        environment:
+            DOCKER_INFLUXDB_INIT_MODE: 'setup'
+            DOCKER_INFLUXDB_INIT_USERNAME: 'iobroker'
+            DOCKER_INFLUXDB_INIT_PASSWORD: 'iobroker'
+            DOCKER_INFLUXDB_INIT_BUCKET: 'iobroker'
+            DOCKER_INFLUXDB_INIT_ORG: 'iobroker'
+            DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: 'aW9icm9rZXI4NjY0NTYzODU0NjU2NTY1MjY1Ng=='
+        volumes:
+            - flux_data:/var/lib/influxdb2
+            - flux_config:/etc/influxdb2
+        networks:
+            - true
+        restart: unless-stopped
+
+    grafana:
+        image: grafana/grafana-oss
+        labels:
+            - 'iobEnabled=${config.dockerInflux.enabled:-true}'
+            - 'iobStopOnUnload=${config.dockerInflux.stopIfInstanceStopped:-true}'
+            # Instruction for ioBroker to copy the files from <ADAPTER-DIR>/grafana-provisioning to managed by docker grafana_provisioning volume
+            - 'iobCopyVolumes=./grafana-provisioning=>grafana_provisioning'
+            # Give the time for adapter to prepare the provisioning files
+            - 'iobWaitForReady=true'
+        container_name: grafana
+        depends_on:
+            - influx
+        ports:
+            - '${config.dockerGrafana.bind:-127.0.0.1}:${config_dockerGrafana_port:-3000}:3000'
+        environment:
+            GF_SECURITY_ADMIN_PASSWORD: '${config.dockerGrafana.adminSecurityPassword:-iobroker}'
+            GF_SERVER_ROOT_URL: '${config.dockerGrafana.serverRootUrl:-}'
+            GF_INSTALL_PLUGINS: '${config.dockerGrafana.plugins:-}'
+            GF_USERS_ALLOW_SIGN_UP: '${config.dockerGrafana.usersAllowSignUp:-false}'
+        volumes:
+            - grafana_data:/var/lib/grafana
+            # bind mount so your generated provisioning files are visible
+            - grafana_provisioning:/etc/grafana/provisioning
+        networks:
+            - true
+        restart: unless-stopped
+
+networks:
+    true:
+        driver: bridge
+
+volumes:
+    flux_data:
+    flux_config:
+    grafana_data:
+    grafana_provisioning:

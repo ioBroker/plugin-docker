@@ -1,0 +1,7 @@
+{
+	"plugins": ["license"],
+	"license": [
+		"{LICENSE,README}{,.md}"
+	],
+	"publishAll": true
+}

@@ -6,6 +6,9 @@
     "name": "Denis Haev",
     "email": "dogafox@gmail.com"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "files": [

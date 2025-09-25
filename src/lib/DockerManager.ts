@@ -697,7 +697,11 @@ export default class DockerManager {
                         if (container.networkMode === true || container.networkMode === 'true') {
                             container.networkMode = prefix;
                         }
-                        if (container.networkMode !== prefix && !container.networkMode.startsWith(`${prefix}_`)) {
+                        if (
+                            container.networkMode !== 'iobroker' &&
+                            container.networkMode !== prefix &&
+                            !container.networkMode.startsWith(`${prefix}_`)
+                        ) {
                             this.log.debug(`Renaming network ${container.networkMode} to be prefixed with ${prefix}_`);
                             container.networkMode = `${prefix}_${container.networkMode}`;
                         }

@@ -172,6 +172,6 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.0.3 (2025-09-25)
 
 - (@GermanBluefox) initial release

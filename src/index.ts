@@ -8,6 +8,7 @@ import type {
     NetworkDriver,
     NetworkInfo,
     VolumeDriver,
+    DockerContainerInspect,
     DockerImageTagsResponse,
     VolumeInfo,
 } from './types';
@@ -30,6 +31,7 @@ export {
     type VolumeDriver,
     type VolumeInfo,
     type DockerImageTagsResponse,
+    type DockerContainerInspect,
 };
 
 export default class DockerPlugin extends PluginBase {

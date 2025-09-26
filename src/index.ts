@@ -11,6 +11,13 @@ import type {
     DockerContainerInspect,
     DockerImageTagsResponse,
     VolumeInfo,
+    ImageName,
+    DiskUsage,
+    DockerImageInspect,
+    PortBinding,
+    Protocol,
+    Security,
+    VolumeMount,
 } from './types';
 import { readFileSync } from 'node:fs';
 import JSON5 from 'json5';
@@ -32,6 +39,13 @@ export {
     type VolumeInfo,
     type DockerImageTagsResponse,
     type DockerContainerInspect,
+    type ImageName,
+    type DiskUsage,
+    type DockerImageInspect,
+    type PortBinding,
+    type Protocol,
+    type Security,
+    type VolumeMount,
 };
 
 export default class DockerPlugin extends PluginBase {

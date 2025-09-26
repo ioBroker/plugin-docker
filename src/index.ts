@@ -37,9 +37,9 @@ export default class DockerPlugin extends PluginBase {
      */
     async init(pluginConfig: DockerConfig): Promise<void> {
         // Read the instance config
-        const instanceObj: ioBroker.InstanceObject | null | undefined = (await this.getObject(
+        const instanceObj: ioBroker.InstanceObject | null | undefined = await this.getObject(
             this.settings.parentNamespace,
-        )) as ioBroker.InstanceObject | null | undefined;
+        );
         if (!instanceObj) {
             throw new Error(`Cannot find instance object ${this.settings.parentNamespace}`);
         }
@@ -50,7 +50,6 @@ export default class DockerPlugin extends PluginBase {
         if (pluginConfig.iobDockerComposeFiles) {
             for (const filePath of pluginConfig.iobDockerComposeFiles) {
                 try {
-                    // @ts-expect-error fixed in plugin-base
                     const fileContent = readFileSync(`${this.settings.adapterDir}/${filePath}`, 'utf-8');
                     if (filePath.endsWith('.json')) {
                         try {

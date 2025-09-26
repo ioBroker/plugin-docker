@@ -37,8 +37,8 @@ Add the following to the `common.plugins` section:
         // ...
         "plugins": {
             "docker": {
-                "iobDockerApi": "default",
-                "iobDockerComposeFiles": ["docker-compose.yaml"]
+                "iobDockerComposeFiles": ["docker-compose.yaml"],
+                "iobDockerApi": "default", // optional
             }
         }
         // ...

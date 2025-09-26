@@ -16,6 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc -p tsconfig.build.json",
     "test": "mocha --exit",
     "release": "release-script",

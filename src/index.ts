@@ -10,7 +10,7 @@ import { walkTheConfig } from './lib/templates';
 
 export type DockerConfig = ComposeTop;
 
-export { DockerManagerOfOwnContainers, DockerManager };
+export { DockerManagerOfOwnContainers, DockerManager, type ContainerConfig };
 
 export default class DockerPlugin extends PluginBase {
     #dockerManager: DockerManagerOfOwnContainers | null = null;

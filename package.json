@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node tasks",
     "test": "mocha --exit",
     "release": "release-script",
     "release-patch": "release-script patch --yes",

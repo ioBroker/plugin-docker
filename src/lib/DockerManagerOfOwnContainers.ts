@@ -260,7 +260,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         options: {
             dockerApi?: {
                 host?: string;
-                port?: number;
+                port?: number | string;
                 protocol?: 'http' | 'https';
                 ca?: string;
                 cert?: string;

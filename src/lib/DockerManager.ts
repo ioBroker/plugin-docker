@@ -68,7 +68,7 @@ export default class DockerManager {
     constructor(options: {
         dockerApi?: {
             host?: string;
-            port?: number;
+            port?: number | string;
             protocol?: 'http' | 'https';
             ca?: string;
             cert?: string;

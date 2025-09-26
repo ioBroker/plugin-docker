@@ -8,6 +8,7 @@ import type {
     NetworkDriver,
     NetworkInfo,
     VolumeDriver,
+    DockerImageTagsResponse,
     VolumeInfo,
 } from './types';
 import { readFileSync } from 'node:fs';
@@ -28,6 +29,7 @@ export {
     type NetworkInfo,
     type VolumeDriver,
     type VolumeInfo,
+    type DockerImageTagsResponse,
 };
 
 export default class DockerPlugin extends PluginBase {

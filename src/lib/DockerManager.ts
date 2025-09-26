@@ -49,7 +49,7 @@ export default class DockerManager {
     #driver: 'socket' | 'cli' | 'http' | 'https' | 'ssh' = 'cli';
     #dockerode: Docker | null = null;
     #cliAvailable: boolean = false;
-    readonly #dockerApi?: {
+    protected readonly dockerApi?: {
         host?: string;
         port?: number | string;
         protocol?: 'http' | 'https' | 'ssh';
@@ -79,7 +79,7 @@ export default class DockerManager {
     }) {
         this.log = options.logger;
         this.namespace = options.namespace;
-        this.#dockerApi = options.dockerApi;
+        this.dockerApi = options.dockerApi;
         this.#waitReady = new Promise<void>(resolve => this.init().then(() => resolve()));
     }
 
@@ -146,12 +146,12 @@ export default class DockerManager {
         // - https://localhost:2376 or
         // - CLI
         // Probe the socket
-        if (this.#dockerApi && this.#dockerApi.host && this.#dockerApi.port) {
-            this.#driver = this.#dockerApi.protocol || 'http';
+        if (this.dockerApi && this.dockerApi.host && this.dockerApi.port) {
+            this.#driver = this.dockerApi.protocol || 'http';
             this.#dockerode = new Docker({
-                host: this.#dockerApi.host,
-                port: this.#dockerApi.port,
-                protocol: this.#dockerApi.protocol || 'http',
+                host: this.dockerApi.host,
+                port: this.dockerApi.port,
+                protocol: this.dockerApi.protocol || 'http',
             });
         } else if (await DockerManager.checkDockerSocket()) {
             this.#driver = 'socket';

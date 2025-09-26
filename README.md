@@ -30,12 +30,20 @@ Use it if you want to:
 
 Add the following to the `common.plugins` section:
 
-```json
-"plugins": {
-  "docker": {
-    "iobDockerApi": "default",
-    "iobDockerComposeFiles": ["docker-compose.yaml"]
-  }
+```json5
+{
+    // ...
+    "common": {
+        // ...
+        "plugins": {
+            "docker": {
+                "iobDockerApi": "default",
+                "iobDockerComposeFiles": ["docker-compose.yaml"]
+            }
+        }
+        // ...
+    }
+    // ...
 }
 ```
 

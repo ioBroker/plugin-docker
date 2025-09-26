@@ -1,5 +1,6 @@
 import { PluginBase } from '@iobroker/plugin-base';
 import DockerManagerOfOwnContainers from './lib/DockerManagerOfOwnContainers';
+import DockerManager from './lib/DockerManager';
 import type { ContainerConfig } from './types';
 import { readFileSync } from 'node:fs';
 import JSON5 from 'json5';
@@ -8,6 +9,8 @@ import { composeToContainerConfigs } from './lib/compose2config';
 import { walkTheConfig } from './lib/templates';
 
 export type DockerConfig = ComposeTop;
+
+export { DockerManagerOfOwnContainers, DockerManager };
 
 export default class DockerPlugin extends PluginBase {
     #dockerManager: DockerManagerOfOwnContainers | null = null;

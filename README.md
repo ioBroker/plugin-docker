@@ -1,6 +1,6 @@
 # Docker Plugin for ioBroker
 
-A lightweight plugin that lets ioBroker define, start, update, monitor, and optionally back up Docker containers declared via Docker Compose files. It translates adapter configuration values into container settings and keeps containers in sync with your instance configuration.
+A lightweight plugin that lets ioBroker define,, start, update, monitor, and optionally back up Docker containers declared via Docker Compose files. It translates adapter configuration values into container settings and keeps containers in sync with your instance configuration.
 
 ## Highlights
 
@@ -53,7 +53,7 @@ version: '3.9'
 
 services:
     influx:
-        # If container_name is omitted a default is used: iob_<adapterName>_<instance>
+        # If container_name is omitted, a default name is used: iob_<adapterName>_<instance>
         image: influxdb:2
         labels:
             # ioBroker-specific control (see section below)
@@ -71,10 +71,10 @@ services:
             DOCKER_INFLUXDB_INIT_ORG: 'iobroker'
             DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: 'aW9icm9rZXI4NjY0NTYzODU0NjU2NTY1MjY1Ng=='
         volumes:
-            - flux_data:/var/lib/influxdb2
+            - flux_data:/var/lib/influxdb2 # All volume names will be prefixed with `iob_<adapterName>_<instance>_`
             - flux_config:/etc/influxdb2
         networks:
-            - true # Use the default shared network name
+            - true # Use the default shared network name: `iob_<adapterName>_<instance>`. Otherwise, the name is prefixed with `iob_<adapterName>_<instance>_`. The only exception is network `iobroker`, which is used as-is.
         restart: unless-stopped
 
     grafana:
@@ -96,14 +96,14 @@ services:
             GF_INSTALL_PLUGINS: '${config.dockerGrafana.plugins:-}'
             GF_USERS_ALLOW_SIGN_UP: '${config.dockerGrafana.usersAllowSignUp:-false}'
         volumes:
-            - grafana_data:/var/lib/grafana
+            - grafana_data:/var/lib/grafana # All volume names will be prefixed with `iob_<adapterName>_<instance>_`
             - grafana_provisioning:/etc/grafana/provisioning
         networks:
-            - true
+            - true # Use the default shared network name: `iob_<adapterName>_<instance>`. Otherwise, the name is prefixed with `iob_<adapterName>_<instance>_`. The only exception is network `iobroker`, which is used as-is.
         restart: unless-stopped
 
 networks:
-    true: # Literal "true" selects the standardized network name iob_<adapterName>_<instance>
+    true: # Literal "true" selects the standardized network name `iob_<adapterName>_<instance>`
         driver: bridge
 
 volumes:
@@ -172,6 +172,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Split the docker manager into pure docker commands and monitoring of own containers
+
 ### 0.0.3 (2025-09-25)
 
 - (@GermanBluefox) initial release

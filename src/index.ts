@@ -1,5 +1,5 @@
 import { PluginBase } from '@iobroker/plugin-base';
-import DockerManager from './lib/DockerManager';
+import DockerManagerOfOwnContainers from './lib/DockerManagerOfOwnContainers';
 import type { ContainerConfig } from './types';
 import { readFileSync } from 'node:fs';
 import JSON5 from 'json5';
@@ -10,7 +10,7 @@ import { walkTheConfig } from './lib/templates';
 export type DockerConfig = ComposeTop;
 
 export default class DockerPlugin extends PluginBase {
-    #dockerManager: DockerManager | null = null;
+    #dockerManager: DockerManagerOfOwnContainers | null = null;
     #configurations: ContainerConfig[] = [];
     #iobDockerApi:
         | {
@@ -136,7 +136,7 @@ export default class DockerPlugin extends PluginBase {
 
     async #startDockerManager(): Promise<void> {
         if (this.#configurations.find(conf => conf.iobEnabled !== false)) {
-            this.#dockerManager ||= new DockerManager(
+            this.#dockerManager ||= new DockerManagerOfOwnContainers(
                 {
                     dockerApi: this.#iobDockerApi,
                     logger: {
@@ -159,7 +159,7 @@ export default class DockerPlugin extends PluginBase {
     /**
      * Return the DockerManager object. This can be used to monitor containers
      */
-    getDockerManager(): DockerManager | null {
+    getDockerManager(): DockerManagerOfOwnContainers | null {
         return this.#dockerManager;
     }
 

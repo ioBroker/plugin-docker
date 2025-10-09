@@ -23,6 +23,7 @@
   "scripts": {
     "postbuild": "esm2cjs --in build/esm --out build/cjs -l error -t node18 && node tasks",
     "build": "tsc -p tsconfig.build.json && npm run postbuild",
+    "lint": "eslint -c eslint.config.mjs",
     "prepublishOnly": "npm run build",
     "test": "mocha --exit",
     "release": "release-script",

@@ -364,15 +364,12 @@ export interface VolumeMount {
         size?: number; // bytes
         mode?: number; // e.g. 1777
     };
-    /** ioBroker custom: if true, the folder will be copied into newly created volume */
+    /**  If set, this folder will be copied from host (iobAutoCopyFrom - folder) into container (only for type: "volume") */
     iobAutoCopyFrom?: string;
     /** Copy files from host to volume even if volume is not empty */
     iobAutoCopyFromForce?: boolean;
     /** If this folder should be "backup"ed by ioBroker */
     iobBackup?: boolean;
-
-    /** If set, this folder will be copied from host (iobCopyVolume - folder) into container (only for type: "volume") */
-    iobCopyVolume?: string;
 }
 
 export interface Resources {

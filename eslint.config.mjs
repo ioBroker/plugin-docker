@@ -12,6 +12,7 @@ export default [
             'test/**/*.js',
             '*.config.mjs',
             'build/**/*',
+            'node_modules/**/*',
             'admin/build',
             'admin/words.js',
             'admin/admin.d.ts',

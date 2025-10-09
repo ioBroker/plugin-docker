@@ -428,18 +428,26 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
         });
     }
     const iobCopyVolumes = labels?.iobCopyVolumes?.split(',').map(m => {
-        const parts = m.trim().split('=>');
+        let force = false;
+        if (m.includes('(force)')) {
+            m = m.replace('(force)', '');
+            force = true;
+        }
+        const parts = m.trim().split('->');
         return {
             source: parts[0].trim(),
             target: parts[1]?.trim() || parts[0].trim(),
+            force,
         };
     });
+
     if (iobCopyVolumes) {
         mounts?.forEach(m => {
             const source = m.source === true ? 'true' : m.source;
             const copyInstruction = iobCopyVolumes.find(c => c.target === source);
             if (copyInstruction) {
-                m.iobCopyVolume = copyInstruction.source;
+                m.iobAutoCopyFrom = copyInstruction.source;
+                m.iobAutoCopyFromForce = copyInstruction.force;
             }
         });
     }

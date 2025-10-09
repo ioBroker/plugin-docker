@@ -1,6 +1,6 @@
 /* ============== Helpers ============== */
 
-import { cleanUndefined, ComposeService, ComposeTop, StringMap } from './parseDockerCompose';
+import { cleanUndefined, type ComposeService, type ComposeTop, type StringMap } from './parseDockerCompose';
 import type {
     ContainerConfig,
     DeviceMapping,
@@ -14,6 +14,8 @@ import type {
     Restart,
     VolumeMount,
 } from '../types';
+
+type Duration = `${number}ns` | `${number}us` | `${number}ms` | `${number}s` | `${number}m` | `${number}h`;
 
 const isObject = (v: any): v is Record<string, any> => v && typeof v === 'object' && !Array.isArray(v);
 
@@ -157,6 +159,36 @@ function mapVolumes(
     return res;
 }
 
+function duration2ms(d?: Duration): number | undefined {
+    if (d == null) {
+        return undefined;
+    }
+    if (typeof d === 'number') {
+        return d;
+    }
+    // crude parser: supports 1h, 5m, 30s; if plain number, assume seconds
+    const m = String(d).match(/^(\d+)(ns|us|ms|s|m|h)?$/);
+    if (!m) {
+        return undefined;
+    }
+    const n = Number(m[1]);
+    const u = m[2] || 's';
+    switch (u) {
+        case 'h':
+            return n * 3_600_000;
+        case 'm':
+            return n * 60_000;
+        case 's':
+            return n * 1000;
+        case 'ms':
+            return n;
+        case 'ns':
+            return Math.ceil(n / 1_000_000);
+        default:
+            return undefined; // ignore ns/us
+    }
+}
+
 function mapDevices(devs?: ComposeService['devices']): DeviceMapping[] | undefined {
     if (!devs || devs.length === 0) {
         return undefined;
@@ -214,10 +246,10 @@ function mapHealthcheck(h?: ComposeService['healthcheck']): Healthcheck | undefi
     }
     return {
         test: h.test as string | string[] | ['NONE'],
-        interval: h.interval,
-        timeout: h.timeout,
+        interval: duration2ms(h.interval),
+        timeout: duration2ms(h.timeout),
         retries: h.retries,
-        startPeriod: h.start_period,
+        startPeriod: duration2ms(h.start_period),
     } as Healthcheck;
 }
 

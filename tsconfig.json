@@ -1,23 +1,22 @@
 {
-    "compileOnSave": true,
+    // Used to type-check in the editor
     "compilerOptions": {
-        "noEmit": true,
-        "allowJs": true,
-        "checkJs": true,
-        "skipLibCheck": true, // Don't report errors in 3rd party definitions
-        "noEmitOnError": true,
-        "outDir": "./build",
-        "removeComments": false,
-        "module": "Node16",
-        "moduleResolution": "node16",
-        "esModuleInterop": true,
-        "resolveJsonModule": true,
-        "strict": true,
-        "target": "es2022",
-        "sourceMap": true,
-        "inlineSourceMap": false,
+        "target": "es2017" /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019', 'ES2020', or 'ESNEXT'. */,
+        "allowJs": true /* Allow JavaScript files to be compiled. */,
+        "checkJs": true /* Report errors in .js files. */,
+        "declaration": true /* Generates corresponding '.d.ts' file. */,
+        "emitDeclarationOnly": false,
+        "stripInternal": true,
+        "module": "NodeNext",
+        "moduleResolution": "Node16",
+        "outDir": "./build/esm" /* Redirect output structure to the directory. */,
+        "rootDir": "./src" /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */,
+        "strict": true /* Enable all strict type-checking options. */,
+        "esModuleInterop": true /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */,
         "useUnknownInCatchVariables": false,
-        "types": ["@iobroker/types"]
+        "forceConsistentCasingInFileNames": true /* Disallow inconsistently-cased references to the same file. */,
+        "newLine": "lf",
+        "types": ["@iobroker/types", "node"]
     },
-    "include": ["src/**/*.ts", "src/**/*.d.ts"]
+    "include": ["src/**/*.ts", "src/types.d.ts"]
 }

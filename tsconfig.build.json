@@ -1,11 +1,8 @@
 {
+    // Used to generate the definition files
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "allowJs": false,
         "checkJs": false,
-        "noEmit": false,
-        "declaration": true,
-        "types": ["@iobroker/types"]
-    },
-    "include": ["src/**/*.ts", "src/**/*.d.ts"],
+        "strict": false,
+    }
 }

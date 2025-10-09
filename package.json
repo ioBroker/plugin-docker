@@ -9,15 +9,21 @@
   "publishConfig": {
     "access": "public"
   },
-  "main": "build/index.js",
-  "types": "build/index.d.ts",
-  "files": [
-    "build/",
-    "LICENSE"
-  ],
+  "main": "build/cjs/index.js",
+  "module": "build/esm/index.js",
+  "types": "build/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./build/esm/index.js",
+      "require": "./build/cjs/index.js",
+      "types": "./build/esm/index.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
+    "postbuild": "esm2cjs --in build/esm --out build/cjs -l error -t node18 && node tasks",
+    "build": "tsc -p tsconfig.build.json && npm run postbuild",
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.build.json && node tasks",
     "test": "mocha --exit",
     "release": "release-script",
     "release-patch": "release-script patch --yes",
@@ -47,7 +53,10 @@
     "json5": "^2.2.3"
   },
   "devDependencies": {
+    "@alcalzone/esm2cjs": "^1.4.2",
     "@iobroker/eslint-config": "^2.2.0",
+    "@iobroker/db-states-redis": "^7.0.7",
+    "@iobroker/db-objects-redis": "^7.0.7",
     "@alcalzone/release-script": "^4.0.0",
     "@alcalzone/release-script-plugin-license": "^4.0.0",
     "@iobroker/types": "^7.0.7",

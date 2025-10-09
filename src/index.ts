@@ -89,6 +89,8 @@ export default class DockerPlugin extends PluginBase {
                 this.settings.adapterDir = `${__dirname}/../../../${adapterName}`;
             } else if (existsSync(`${__dirname}/../../../../${adapterName}`)) {
                 this.settings.adapterDir = `${__dirname}/../../../../${adapterName}`;
+            } else if (existsSync(`${__dirname}/../../../../../${adapterName}`)) {
+                this.settings.adapterDir = `${__dirname}/../../../../../${adapterName}`;
             } else {
                 throw new Error('Cannot find adapter directory, please update plugin-base package');
             }

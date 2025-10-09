@@ -1887,29 +1887,32 @@ export default class DockerManager {
     }
 
     /** List files in a volume */
-    async volumeDir(volumeName: string, path?: string): Promise<LsEntry[] | null> {
-        // Execute `docker run --rm -it -v {volumeName}:/data alpine ls -l /data/{path}
-        const result = await this.containerRun({
-            image: 'alpine',
-            name: `iobroker_temp_ls_${Date.now()}`,
-            removeOnExit: true,
-            tty: false,
-            stdinOpen: false,
-            command: ['ls', '-la', path ? join('/data', path || '').replace(/\\/g, '/') : '/data'],
-            mounts: [{ type: 'volume', source: volumeName, target: '/data', readOnly: true }],
-        });
+    async volumeDir(volumeName: string, path?: string): Promise<LsEntry[] | string> {
+        try {
+            // Execute `docker run --rm -it -v {volumeName}:/data alpine ls -l /data/{path}
+            const result = await this.containerRun({
+                image: 'alpine',
+                name: `iobroker_temp_ls_${Date.now()}`,
+                removeOnExit: true,
+                tty: false,
+                stdinOpen: false,
+                command: ['ls', '-la', path ? join('/data', path || '').replace(/\\/g, '/') : '/data'],
+                mounts: [{ type: 'volume', source: volumeName, target: '/data', readOnly: true }],
+            });
+            if (!result || result.stderr) {
+                this.log.error(`Cannot list files in volume ${volumeName}: ${result?.stderr || 'unknown error'}`);
+                return result?.stderr || 'unknown error';
+            }
+            // parse result.stdout
+            if (!result.stdout) {
+                return [];
+            }
 
-        if (!result || result.stderr) {
-            this.log.error(`Cannot list files in volume ${volumeName}: ${result?.stderr || 'unknown error'}`);
-            return null;
+            return parseLsLong(result.stdout);
+        } catch (e) {
+            this.log.error(`Cannot list files in volume ${volumeName}: ${e.message}`);
+            return e.message;
         }
-
-        // parse result.stdout
-        if (!result.stdout) {
-            return [];
-        }
-
-        return parseLsLong(result.stdout);
     }
 
     /**

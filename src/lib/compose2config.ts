@@ -445,10 +445,10 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
     }
 
     const cfg: ContainerConfig = {
-        iobEnabled: labels?.iobEnabled as unknown as boolean, // default true
-        iobStopOnUnload: labels?.iobStopOnUnload as unknown as boolean, // default false
-        iobAutoImageUpdate: labels?.iobAutoImageUpdate as unknown as boolean, // default false
-        iobMonitoringEnabled: labels?.iobMonitoringEnabled as unknown as boolean, // default false
+        iobEnabled: labels?.iobEnabled !== 'false', // default true
+        iobStopOnUnload: labels?.iobStopOnUnload === 'true', // default false
+        iobAutoImageUpdate: labels?.iobAutoImageUpdate === 'true', // default false
+        iobMonitoringEnabled: labels?.iobMonitoringEnabled === 'true', // default false
         iobWaitForReady:
             labels?.iobWaitForReady === 'true' ? true : labels?.iobWaitForReady === 'false' ? false : undefined, // default false
 

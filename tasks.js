@@ -7,8 +7,8 @@ let text = readFileSync(`${__dirname}/build/cjs/index.js`, 'utf8');
 text = text.replace(
     'exports.default = DockerPlugin;',
     `module.exports = DockerPlugin;
-module.exports.DockerManagerOfOwnContainers = DockerManagerOfOwnContainers;
-module.exports.DockerManager = DockerManager;
+module.exports.DockerManagerOfOwnContainers = DockerManagerOfOwnContainers_1.default;
+module.exports.DockerManager = DockerManager_1.default;
 module.exports.default = DockerPlugin;`,
 );
 writeFileSync(`${__dirname}/build/cjs/index.js`, text, 'utf8');

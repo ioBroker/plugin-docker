@@ -382,6 +382,17 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
         throw new Error(`Service ${serviceName} not found in compose file`);
     }
     const env = normalizeEnv(svc.environment);
+    // Replace all true/false and numbers with strings, as docker API expects strings
+    if (env) {
+        for (const k of Object.keys(env)) {
+            if (typeof env[k] === 'boolean') {
+                env[k] = env[k] ? 'true' : 'false';
+            } else if (typeof env[k] === 'number') {
+                env[k] = String(env[k]);
+            }
+        }
+    }
+
     const ports = mapPorts(svc.ports);
     const { mounts, tmpfs } = mapVolumes(svc.volumes, compose.volumes);
     const devices = mapDevices(svc.devices);

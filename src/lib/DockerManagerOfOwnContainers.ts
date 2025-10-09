@@ -52,8 +52,8 @@ function deepCompare(object1: any, object2: any): boolean {
     const keys1 = Object.keys(object1);
     for (const key of keys1) {
         // ignore iob* properties as they belong to ioBroker configuration
-        // ignore hostname
-        if (key.startsWith('iob') || key === 'hostname') {
+        // ignore hostname and dependsOn as it is only for docker-compose
+        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn') {
             continue;
         }
         if (!deepCompare(object1[key], object2[key])) {
@@ -71,8 +71,8 @@ function compareConfigs(desired: ContainerConfig, existing: ContainerConfig): st
     // We only compare keys that are in the desired config
     for (const key of keys) {
         // ignore iob* properties as they belong to ioBroker configuration
-        // ignore hostname
-        if (key.startsWith('iob') || key === 'hostname') {
+        // ignore hostname and dependsOn as it is only for docker-compose
+        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn') {
             continue;
         }
         if (typeof desired[key] === 'object' && desired[key] !== null) {

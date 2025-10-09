@@ -203,7 +203,7 @@ export default class DockerPlugin extends PluginBase {
                         warn: this.log.warn.bind(this.log),
                         error: this.log.error.bind(this.log),
                     },
-                    namespace: this.parentNamespace as `${string}.${number}`,
+                    namespace: this.parentNamespace.replace('system.adapter.', '') as `${string}.${number}`,
                 },
                 this.#configurations,
             );

@@ -1786,7 +1786,9 @@ export default class DockerManager {
                     await container.stop();
                     await container.remove({ force: true });
                 } catch (e) {
-                    this.log.warn(`Cannot remove temporary container ${tempContainerName}: ${e.message}`);
+                    if (!e.message.includes('already stopped')) {
+                        this.log.warn(`Cannot remove temporary container ${tempContainerName}: ${e.message}`);
+                    }
                 }
             }
         }

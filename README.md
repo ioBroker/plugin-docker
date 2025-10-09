@@ -180,7 +180,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
-### 0.0.26 (2025-10-09)
+### **WORK IN PROGRESS**
 - (@GermanBluefox) Split the docker manager into pure docker commands and monitoring of own containers
 
 ### 0.0.3 (2025-09-25)

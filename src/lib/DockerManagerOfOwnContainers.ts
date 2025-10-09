@@ -2,6 +2,7 @@
 // it monitors periodically the docker daemon status.
 // It manages containers defined in common.plugins.docker and could monitor other containers
 
+import { join } from 'path';
 import type { ContainerConfig, ContainerStats, ContainerStatus, DockerContainerInspect } from '../types';
 import DockerManager from './DockerManager';
 
@@ -255,6 +256,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
     readonly #ownContainers: ContainerConfig[] = [];
     #monitoringInterval: NodeJS.Timeout | null = null;
     #ownContainersStats: { [name: string]: ContainerStatus } = {};
+    #adapterDir: string;
 
     constructor(
         options: {
@@ -266,12 +268,14 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 cert?: string;
                 key?: string;
             };
+            adapterDir?: string;
             logger: ioBroker.Logger;
             namespace: `${string}.${number}`;
         },
         containers?: ContainerConfig[],
     ) {
         super(options);
+        this.#adapterDir = options.adapterDir || '';
         this.#ownContainers = containers || [];
         this.#waitAllChecked = new Promise<void>(resolve => (this.#waitAllCheckedResolve = resolve));
     }
@@ -554,6 +558,14 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                                             container.labels = { ...container.labels, iob_backup: volumes.join(',') };
                                         }
                                     }
+                                }
+
+                                if (
+                                    mount.iobAutoCopyFrom &&
+                                    (!mount.iobAutoCopyFrom.startsWith('/') ||
+                                        mount.iobAutoCopyFrom.match(/^[a-zA-Z]:/))
+                                ) {
+                                    mount.iobAutoCopyFrom = join(this.#adapterDir, mount.iobAutoCopyFrom);
                                 }
 
                                 const volume = volumes.find(v => v.name === mount.source);

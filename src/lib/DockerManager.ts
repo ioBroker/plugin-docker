@@ -1830,9 +1830,11 @@ export default class DockerManager {
             const container = await this.#dockerode.createContainer({
                 Image: 'alpine',
                 name: tempContainerName,
+
                 Cmd: ['sleep', '30'],
                 HostConfig: {
                     Binds: [`${volumeName}:/data`],
+                    AutoRemove: true,
                 },
             });
             try {
@@ -1867,7 +1869,7 @@ export default class DockerManager {
 
         // create a temporary container with volume mounted
         const createResult = await this.#exec(
-            `create -v ${volumeName}:/data --name ${tempContainerName} alpine sleep 60`,
+            `create -rm -v ${volumeName}:/data --name ${tempContainerName} alpine sleep 60`,
         );
         if (createResult.stderr) {
             return { stdout: '', stderr: `Cannot create temporary container: ${createResult.stderr}` };

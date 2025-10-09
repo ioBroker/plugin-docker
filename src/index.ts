@@ -19,7 +19,7 @@ import type {
     Security,
     VolumeMount,
 } from './types';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import JSON5 from 'json5';
 import composeFromYaml, { type ComposeTop } from './lib/parseDockerCompose';
 import { composeToContainerConfigs } from './lib/compose2config';
@@ -78,6 +78,20 @@ export default class DockerPlugin extends PluginBase {
         );
         if (!instanceObj) {
             throw new Error(`Cannot find instance object ${this.settings.parentNamespace}`);
+        }
+
+        if (!this.settings.adapterDir) {
+            // somehow, the adapter used old plugin-base version. Try to find adapter directory
+            const adapterName = this.settings.parentPackage.name;
+            if (existsSync(`${__dirname}/../../${adapterName}`)) {
+                this.settings.adapterDir = `${__dirname}/../../${adapterName}`;
+            } else if (existsSync(`${__dirname}/../../../${adapterName}`)) {
+                this.settings.adapterDir = `${__dirname}/../../../${adapterName}`;
+            } else if (existsSync(`${__dirname}/../../../../${adapterName}`)) {
+                this.settings.adapterDir = `${__dirname}/../../../../${adapterName}`;
+            } else {
+                throw new Error('Cannot find adapter directory, please update plugin-base package');
+            }
         }
 
         walkTheConfig(pluginConfig, instanceObj.native);

@@ -458,16 +458,20 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
             const copyInstruction = iobCopyVolumes.find(c => c.target === source);
             if (copyInstruction) {
                 m.iobAutoCopyFrom = copyInstruction.source;
-                m.iobAutoCopyFromForce = copyInstruction.force;
+                if (copyInstruction.force) {
+                    m.iobAutoCopyFromForce = copyInstruction.force;
+                }
             }
         });
     }
 
     const cfg: ContainerConfig = {
-        iobEnabled: labels?.iobEnabled !== 'false', // default true
-        iobStopOnUnload: labels?.iobStopOnUnload === 'true', // default false
-        iobAutoImageUpdate: labels?.iobAutoImageUpdate === 'true', // default false
-        iobMonitoringEnabled: labels?.iobMonitoringEnabled === 'true', // default false
+        // the following attributes could be a string or boolean in labels; convert to boolean or undefined
+        iobEnabled: labels?.iobEnabled as unknown as boolean, // default true
+        iobStopOnUnload: labels?.iobStopOnUnload as unknown as boolean, // default false
+        iobAutoImageUpdate: labels?.iobAutoImageUpdate as unknown as boolean, // default false
+        iobMonitoringEnabled: labels?.iobMonitoringEnabled as unknown as boolean, // default false
+
         iobWaitForReady:
             labels?.iobWaitForReady === 'true' ? true : labels?.iobWaitForReady === 'false' ? false : undefined, // default false
 
@@ -534,6 +538,30 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
 
         build,
     };
+
+    if ((cfg.iobEnabled as unknown as string) === 'false') {
+        cfg.iobEnabled = false;
+    } else if ((cfg.iobEnabled as unknown as string) === 'true') {
+        cfg.iobEnabled = true;
+    }
+
+    if ((cfg.iobStopOnUnload as unknown as string) === 'false') {
+        cfg.iobStopOnUnload = false;
+    } else if ((cfg.iobStopOnUnload as unknown as string) === 'true') {
+        cfg.iobStopOnUnload = true;
+    }
+
+    if ((cfg.iobAutoImageUpdate as unknown as string) === 'false') {
+        cfg.iobAutoImageUpdate = false;
+    } else if ((cfg.iobAutoImageUpdate as unknown as string) === 'true') {
+        cfg.iobAutoImageUpdate = true;
+    }
+
+    if ((cfg.iobMonitoringEnabled as unknown as string) === 'false') {
+        cfg.iobMonitoringEnabled = false;
+    } else if ((cfg.iobMonitoringEnabled as unknown as string) === 'true') {
+        cfg.iobMonitoringEnabled = true;
+    }
 
     return cleanUndefined(cfg) as ContainerConfig;
 }

@@ -30,9 +30,10 @@ services:
             - 'iobEnabled=${config.dockerInflux.enabled:-true}'
             - 'iobStopOnUnload=${config.dockerInflux.stopIfInstanceStopped:-true}'
             # Instruction for ioBroker to copy the files from <ADAPTER-DIR>/grafana-provisioning to managed by docker grafana_provisioning volume
-            - 'iobCopyVolumes=./grafana-provisioning=>grafana_provisioning'
+            - 'iobCopyVolumes=./grafana-provisioning->grafana_provisioning(force),./grafanaData->grafana_data'
             # Give the time for adapter to prepare the provisioning files
             - 'iobWaitForReady=true'
+            - 'iobBackup=grafana_data'
         container_name: grafana
         depends_on:
             - influx
@@ -43,6 +44,7 @@ services:
             GF_SERVER_ROOT_URL: '${config.dockerGrafana.serverRootUrl:-}'
             GF_INSTALL_PLUGINS: '${config.dockerGrafana.plugins:-}'
             GF_USERS_ALLOW_SIGN_UP: '${config.dockerGrafana.usersAllowSignUp:-false}'
+            GF_INSTANCE: '${instance}'
         volumes:
             - grafana_data:/var/lib/grafana
             # bind mount so your generated provisioning files are visible

@@ -99,8 +99,13 @@ export default class DockerPlugin extends PluginBase {
                 throw new Error('Cannot find adapter directory, please update plugin-base package');
             }
         }
-
-        walkTheConfig(pluginConfig, instanceObj.native);
+        const instance = parseInt(this.settings.parentNamespace.split('.').pop()!, 10);
+        if (isNaN(instance)) {
+            throw new Error(`Cannot find instance number in ${this.settings.parentNamespace}`);
+        }
+        walkTheConfig(pluginConfig, instanceObj.native, {
+            instance,
+        });
 
         // If dockerFiles is specified, read the files and merge them with dockerConfigs
         if (pluginConfig.iobDockerComposeFiles) {
@@ -110,7 +115,9 @@ export default class DockerPlugin extends PluginBase {
                     if (filePath.endsWith('.json')) {
                         try {
                             const fileJson = JSON.parse(fileContent);
-                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native);
+                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native, {
+                                instance,
+                            });
                             const config = composeToContainerConfigs(pureFileConfig);
                             this.#configurations.push(...config);
                         } catch (err) {
@@ -119,7 +126,9 @@ export default class DockerPlugin extends PluginBase {
                     } else if (filePath.endsWith('.json5')) {
                         try {
                             const fileJson = JSON5.parse(fileContent);
-                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native);
+                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native, {
+                                instance,
+                            });
                             const config = composeToContainerConfigs(pureFileConfig);
                             this.#configurations.push(...config);
                         } catch (err) {
@@ -128,7 +137,9 @@ export default class DockerPlugin extends PluginBase {
                     } else if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
                         try {
                             const fileYaml = composeFromYaml(fileContent);
-                            const pureFileConfig = walkTheConfig(fileYaml, instanceObj.native) as ComposeTop;
+                            const pureFileConfig = walkTheConfig(fileYaml, instanceObj.native, {
+                                instance,
+                            }) as ComposeTop;
                             const config = composeToContainerConfigs(pureFileConfig);
                             this.#configurations.push(...config);
                         } catch (err) {

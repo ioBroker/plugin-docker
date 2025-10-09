@@ -16,6 +16,7 @@ services:
             MYSQL_USER: 'iobroker'
             MYSQL_PASSWORD: 'iobroker'
             MYSQL_ALLOW_EMPTY_PASSWORD: 'false'
+            MYSQL_INSTANCE: '${instance}'
         volumes:
             - mysql_data:/var/lib/mysql
             - mysql_config:/etc/mysql/conf.d

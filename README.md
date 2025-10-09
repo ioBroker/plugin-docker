@@ -180,7 +180,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.1.5 (2025-10-09)
 - (@GermanBluefox) Added `${instance}` variable to be used in docker-compose files
 
 ### 0.1.4 (2025-10-09)

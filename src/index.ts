@@ -18,6 +18,7 @@ import type {
     Protocol,
     Security,
     VolumeMount,
+    LsEntry,
 } from './types';
 import { existsSync, readFileSync } from 'node:fs';
 import JSON5 from 'json5';
@@ -46,6 +47,7 @@ export {
     type Protocol,
     type Security,
     type VolumeMount,
+    type LsEntry,
 };
 
 export default class DockerPlugin extends PluginBase {

@@ -1895,7 +1895,7 @@ export default class DockerManager {
             removeOnExit: true,
             tty: false,
             stdinOpen: false,
-            command: ['ls', '-la', join('/data', path || '')],
+            command: ['ls', '-la', path ? join('/data', path || '').replace(/\\/g, '/') : '/data'],
             mounts: [{ type: 'volume', source: volumeName, target: '/data', readOnly: true }],
         });
 

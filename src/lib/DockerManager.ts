@@ -1915,6 +1915,32 @@ export default class DockerManager {
         }
     }
 
+    /** Read a text file from a volume */
+    async volumeFile(volumeName: string, filePath: string): Promise<string | null> {
+        try {
+            // Execute `docker run --rm -it -v {volumeName}:/data alpine cat /data/{filePath}
+            const result = await this.containerRun({
+                image: 'alpine',
+                name: `iobroker_temp_cat_${Date.now()}`,
+                removeOnExit: true,
+                tty: false,
+                stdinOpen: false,
+                command: ['cat', join('/data', filePath).replace(/\\/g, '/')],
+                mounts: [{ type: 'volume', source: volumeName, target: '/data', readOnly: true }],
+            });
+            if (!result || result.stderr) {
+                this.log.error(
+                    `Cannot read file ${filePath} in volume ${volumeName}: ${result?.stderr || 'unknown error'}`,
+                );
+                throw new Error(result?.stderr);
+            }
+            return result.stdout || '';
+        } catch (e) {
+            this.log.error(`Cannot read file ${filePath} in volume ${volumeName}: ${e.message}`);
+            throw e;
+        }
+    }
+
     /**
      * Create a volume
      *

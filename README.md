@@ -180,6 +180,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Added text file read from volume
+
 ### 0.1.3 (2025-10-09)
 - (@GermanBluefox) Split the docker manager into pure docker commands and monitoring of own containers
 

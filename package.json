@@ -1,6 +1,6 @@
 {
   "name": "@iobroker/plugin-docker",
-  "version": "0.0.24",
+  "version": "0.0.25",
   "description": "Docker module for plugins for js-controller and adapters",
   "author": {
     "name": "Denis Haev",

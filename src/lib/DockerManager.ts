@@ -18,8 +18,11 @@ import type {
     NetworkDriver,
     VolumeInfo,
     VolumeDriver,
+    LsEntry,
 } from '../types';
 import { createConnection } from 'node:net';
+import { PassThrough } from 'node:stream';
+import { join } from 'node:path';
 import Docker, { type MountPropagation, type MountSettings, type MountType } from 'dockerode';
 import type { PackOptions, Pack } from 'tar-fs';
 import type { ConnectConfig } from 'ssh2';
@@ -37,6 +40,58 @@ function size2string(size: number): string {
         return `${(size / (1024 * 1024)).toFixed(2)} MB`;
     }
     return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/** Parse the output of "ls -l" command into array of LsEntry */
+export function parseLsLong(listing: string): LsEntry[] {
+    if (!listing) {
+        return [];
+    }
+
+    // Find all Permission-Marks as "drwxrwxr-x+" or "-rw-r--r--"
+    const permRegex = /[dl-][rwx-]{9}\+?/g;
+    const matches = Array.from(listing.matchAll(permRegex));
+    if (matches.length === 0) {
+        return [];
+    }
+
+    const result: LsEntry[] = [];
+
+    for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index;
+        const end = i + 1 < matches.length ? matches[i + 1].index : listing.length;
+        const entryText = listing.slice(start, end).trim();
+
+        // Split in Felder, Name kann Leerzeichen enthalten => Rest als Name nehmen
+        const parts = entryText.split(/\s+/);
+        if (parts.length < 9) {
+            continue;
+        }
+
+        const permissions = parts[0];
+        const links = Number.isFinite(Number(parts[1])) ? parseInt(parts[1], 10) : undefined;
+        const owner = parts[2];
+        const group = parts[3];
+        const size = parseInt(parts[4], 10) || 0;
+        const month = parts[5];
+        const day = parts[6];
+        const timeOrYear = parts[7];
+        const name = parts.slice(8).join(' ');
+
+        result.push({
+            name,
+            permissions,
+            links,
+            owner,
+            group,
+            size,
+            rawDate: `${month} ${day} ${timeOrYear}`,
+            isDir: permissions.charAt(0) === 'd',
+            isLink: permissions.charAt(0) === 'l',
+        });
+    }
+
+    return result;
 }
 
 export default class DockerManager {
@@ -778,9 +833,26 @@ export default class DockerManager {
      */
     async containerRun(config: ContainerConfig): Promise<{ stdout: string; stderr: string }> {
         if (this.#dockerode) {
-            const container = await this.#dockerode.createContainer(DockerManager.getDockerodeConfig(config));
-            await container.start();
-            return { stdout: `Container ${config.name} started`, stderr: '' };
+            if (!config.command) {
+                throw new Error('Command must be specified when starting a container as run');
+            }
+            const outStream = new PassThrough();
+            const errStream = new PassThrough();
+            let stdout = '';
+            let stderr = '';
+            outStream.on('data', chunk => (stdout += chunk.toString()));
+            errStream.on('data', chunk => (stderr += chunk.toString()));
+            const dockerConfig = DockerManager.getDockerodeConfig(config);
+
+            await this.#dockerode.run(
+                config.image,
+                Array.isArray(config.command) ? config.command : [config.command],
+                [outStream, errStream],
+                { ...dockerConfig, Tty: false },
+            );
+            outStream.end();
+            errStream.end();
+            return { stdout, stderr };
         }
 
         try {
@@ -1810,6 +1882,32 @@ export default class DockerManager {
             // remove temporary container
             await this.#exec(`rm -f ${tempContainerName}`);
         }
+    }
+
+    /** List files in a volume */
+    async volumeDir(volumeName: string, path?: string): Promise<LsEntry[] | null> {
+        // Execute `docker run --rm -it -v {volumeName}:/data alpine ls -l /data/{path}
+        const result = await this.containerRun({
+            image: 'alpine',
+            name: `iobroker_temp_ls_${Date.now()}`,
+            removeOnExit: true,
+            tty: false,
+            stdinOpen: false,
+            command: ['ls', '-la', join('/data', path || '')],
+            mounts: [{ type: 'volume', source: volumeName, target: '/data', readOnly: true }],
+        });
+
+        if (!result || result.stderr) {
+            this.log.error(`Cannot list files in volume ${volumeName}: ${result?.stderr || 'unknown error'}`);
+            return null;
+        }
+
+        // parse result.stdout
+        if (!result.stdout) {
+            return [];
+        }
+
+        return parseLsLong(result.stdout);
     }
 
     /**

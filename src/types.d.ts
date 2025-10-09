@@ -718,3 +718,15 @@ export interface ContainerStatus extends ContainerStats {
     status: 'created' | 'restarting' | 'running' | 'removing' | 'paused' | 'exited' | 'dead' | 'unknown';
     statusTs: number;
 }
+
+export interface LsEntry {
+    name: string;
+    permissions: string;
+    links?: number;
+    owner?: string;
+    group?: string;
+    size: number;
+    rawDate: string; // z.B. "Oct 9 14:17" oder "Oct 9 2024"
+    isDir: boolean;
+    isLink: boolean;
+}

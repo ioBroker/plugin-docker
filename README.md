@@ -180,7 +180,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 0.1.6 (2025-10-15)
 - (@GermanBluefox) Added support of old volumes with `dockerode` library
 
 ### 0.1.5 (2025-10-09)

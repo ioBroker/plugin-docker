@@ -750,7 +750,6 @@ export default class DockerManager {
                 : undefined,
             // WorkingDir: config.workingDir,
             // { '/data': {} }
-            Volumes: config.volumes?.reduce((acc, vol) => (acc[vol] = {}), {} as { [key: string]: object }),
             Labels: config.labels,
             ExposedPorts: config.ports
                 ? config.ports.reduce(
@@ -762,7 +761,8 @@ export default class DockerManager {
                   )
                 : undefined,
             HostConfig: {
-                // Binds: config.binds,
+                // https://github.com/apocas/dockerode/issues/265#issuecomment-462786936
+                Binds: config.volumes,
                 PortBindings: config.ports
                     ? config.ports.reduce(
                           (acc, port) => {

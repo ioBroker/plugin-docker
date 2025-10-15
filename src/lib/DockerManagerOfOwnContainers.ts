@@ -328,7 +328,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 target: mount.Destination,
                 readOnly: mount.RW,
             })),
-            volumes: inspect.Config.Volumes ? Object.keys(inspect.Config.Volumes) : undefined,
+            volumes: inspect.Config.Volumes ? Object.keys(inspect.Config.Volumes) : inspect.HostConfig.Binds,
             extraHosts: inspect.HostConfig.ExtraHosts ?? undefined,
             dns: {
                 servers: inspect.HostConfig.Dns,

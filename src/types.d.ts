@@ -547,7 +547,14 @@ export interface ContainerConfig {
 
     /** Volumes & Mounts */
     mounts?: VolumeMount[]; // --mount (recommended)
-    /** @deprecated use mounts instead */
+    /**
+     * @deprecated use mounts instead
+     * mounts: [{
+     *   "type": "bind",
+     *   "source": "/opt/iobroker/iobroker-data/adapter/volume",
+     *   "target": "/shared"
+     *  }
+     */
     volumes?: string[]; // legacy "-v" strings also acceptable if you want
 
     /** Devices */

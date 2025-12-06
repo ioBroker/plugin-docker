@@ -75,9 +75,9 @@ export default class DockerPlugin extends PluginBase {
      */
     async init(pluginConfig: DockerConfig): Promise<void> {
         // Read the instance config
-        const instanceObj: ioBroker.InstanceObject | null | undefined = await this.getObject(
+        const instanceObj: ioBroker.InstanceObject | null | undefined = (await this.getObject(
             this.settings.parentNamespace,
-        );
+        )) as ioBroker.InstanceObject | null | undefined;
         if (!instanceObj) {
             throw new Error(`Cannot find instance object ${this.settings.parentNamespace}`);
         }

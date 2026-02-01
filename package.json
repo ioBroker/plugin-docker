@@ -63,7 +63,7 @@
     "@iobroker/types": "^7.0.8-alpha.15-20251206-023c9fd23",
     "@types/dockerode": "^3.3.47",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^24.10.1",
+    "@types/node": "^25.1.0",
     "@types/tar-fs": "^2.0.4",
     "mocha": "^11.7.5",
     "typescript": "~5.9.3"

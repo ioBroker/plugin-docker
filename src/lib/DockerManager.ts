@@ -737,11 +737,12 @@ export default class DockerManager {
         return {
             name: config.name,
             Image: config.image,
-            Cmd: Array.isArray(config.command)
-                ? config.command
-                : typeof config.command === 'string'
-                  ? [config.command]
-                  : undefined,
+            Cmd:
+                Array.isArray(config.command) && config.command.length
+                    ? config.command
+                    : typeof config.command === 'string'
+                      ? [config.command]
+                      : undefined,
             Entrypoint: config.entrypoint,
             Env: config.environment
                 ? Object.keys(config.environment)
@@ -833,9 +834,6 @@ export default class DockerManager {
      */
     async containerRun(config: ContainerConfig): Promise<{ stdout: string; stderr: string }> {
         if (this.#dockerode) {
-            if (!config.command) {
-                throw new Error('Command must be specified when starting a container as run');
-            }
             const outStream = new PassThrough();
             const errStream = new PassThrough();
             let stdout = '';
@@ -846,7 +844,7 @@ export default class DockerManager {
 
             await this.#dockerode.run(
                 config.image,
-                Array.isArray(config.command) ? config.command : [config.command],
+                !config.command?.length ? [] : Array.isArray(config.command) ? config.command : [config.command],
                 [outStream, errStream],
                 { ...dockerConfig, Tty: false },
             );
@@ -1715,6 +1713,15 @@ export default class DockerManager {
                 args.push(...config.command);
             } else {
                 args.push(config.command);
+            }
+        }
+
+        // entrypoint override
+        if (config.entrypoint) {
+            if (Array.isArray(config.entrypoint)) {
+                args.unshift('--entrypoint', config.entrypoint.join(' '));
+            } else {
+                args.unshift('--entrypoint', config.entrypoint);
             }
         }
 

@@ -1,6 +1,6 @@
 # Docker Plugin for ioBroker
 
-A lightweight plugin that lets ioBroker define,, start, update, monitor, and optionally back up Docker containers declared via Docker Compose files. It translates adapter configuration values into container settings and keeps containers in sync with your instance configuration.
+A lightweight plugin that lets ioBroker define, start, update, monitor, and optionally back up Docker containers declared via Docker Compose files. It translates adapter configuration values into container settings and keeps containers in sync with your instance configuration.
 
 ## Highlights
 
@@ -180,6 +180,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Correcting compare of existing and desired container configuration to avoid unnecessary restarts
+
 ### 0.1.7 (2025-12-06)
 - (@GermanBluefox) Packages updated
 

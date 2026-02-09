@@ -54,7 +54,7 @@ function deepCompare(object1: any, object2: any): boolean {
     for (const key of keys1) {
         // ignore iob* properties as they belong to ioBroker configuration
         // ignore hostname and dependsOn as it is only for docker-compose
-        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn') {
+        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
             continue;
         }
         if (!deepCompare(object1[key], object2[key])) {
@@ -64,16 +64,75 @@ function deepCompare(object1: any, object2: any): boolean {
     return true;
 }
 
-function compareConfigs(desired: ContainerConfig, existing: ContainerConfig): string[] {
+function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): string[] {
     const diffs: string[] = [];
+    const desired: ContainerConfig = JSON.parse(JSON.stringify(_desired));
+    const existing: ContainerConfig = JSON.parse(JSON.stringify(_existing));
 
     const keys: (keyof ContainerConfig)[] = Object.keys(desired) as Array<keyof ContainerConfig>;
+
+    // Order mounts, volumes and ports to avoid diffs if only the order is different
+    if (desired.mounts) {
+        desired.mounts = desired.mounts.map(m => ({ ...m })).sort((a, b) => a.target.localeCompare(b.target));
+
+        // readonly flag will be ignored, because it is not possible to change it without recreating the container, so it would always cause a diff
+        desired.mounts.forEach(m => delete m.readOnly);
+    }
+    if (existing.mounts) {
+        existing.mounts = existing.mounts.map(m => ({ ...m })).sort((a, b) => a.target.localeCompare(b.target));
+        existing.mounts.forEach(m => delete m.readOnly);
+        // "source": "iob_frigate_0_frigate_logs", => "source": "/var/lib/docker/volumes/iob_frigate_0_frigate_logs/_data",
+        existing.mounts.forEach(m => {
+            if (typeof m.source === 'string' && m.source?.includes('/volumes/') && m.source.includes('/_data')) {
+                const parts = m.source.split('/');
+                m.source = parts[parts.length - 2];
+            }
+        });
+    }
+    if (desired.volumes) {
+        desired.volumes = desired.volumes
+            .map(v => v.trim())
+            .filter(v => v)
+            .sort();
+    }
+    if (existing.volumes) {
+        existing.volumes = existing.volumes
+            .map(v => v.trim())
+            .filter(v => v)
+            .sort();
+    }
+    if (desired.ports) {
+        desired.ports = desired.ports
+            .map(p => ({ ...p }))
+            .sort((a, b) => {
+                if (a.hostPort !== b.hostPort) {
+                    return parseInt(a.containerPort as string, 10) - parseInt(b.containerPort as string, 10);
+                }
+                if (a.hostIP !== b.hostIP && a.hostIP && b.hostIP) {
+                    return a.hostIP?.localeCompare(b.hostIP);
+                }
+                return 0;
+            });
+    }
+    if (existing.ports) {
+        existing.ports = existing.ports
+            .map(p => ({ ...p }))
+            .sort((a, b) => {
+                if (a.hostPort !== b.hostPort) {
+                    return parseInt(a.containerPort as string, 10) - parseInt(b.containerPort as string, 10);
+                }
+                if (a.hostIP !== b.hostIP && a.hostIP && b.hostIP) {
+                    return a.hostIP?.localeCompare(b.hostIP);
+                }
+                return 0;
+            });
+    }
 
     // We only compare keys that are in the desired config
     for (const key of keys) {
         // ignore iob* properties as they belong to ioBroker configuration
         // ignore hostname and dependsOn as it is only for docker-compose
-        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn') {
+        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
             continue;
         }
         if (typeof desired[key] === 'object' && desired[key] !== null) {
@@ -242,6 +301,16 @@ function cleanContainerConfig(obj: ContainerConfig, mayChange?: boolean): Contai
             obj.volumes.sort();
             if (!obj.volumes?.length) {
                 delete obj.volumes;
+            }
+        }
+        if (name === 'command') {
+            if (!obj.command) {
+                delete obj.command;
+                return;
+            }
+            // Make from command array with one string a string, because in this case both forms are possible
+            if (Array.isArray(obj.command) && obj.command.length === 1 && typeof obj.command[0] === 'string') {
+                obj.command = obj.command[0];
             }
         }
     });

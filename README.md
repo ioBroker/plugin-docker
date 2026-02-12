@@ -18,7 +18,7 @@ A lightweight plugin that lets ioBroker define, start, update, monitor, and opti
 Use it if you want to:
 
 - Ship recommended Dockerized services together with an ioBroker adapter (e.g. InfluxDB + Grafana)
-- Ensure containers stay aligned with instance configuration
+- Ensure containers stay aligned with the instance configuration
 - Automate startup, teardown, and updates without writing custom scripts
 
 ## Prerequisites
@@ -64,7 +64,7 @@ services:
         # If container_name is omitted, a default name is used: iob_<adapterName>_<instance>
         image: influxdb:2
         labels:
-            # ioBroker-specific control (see section below)
+            # ioBroker-specific control (see a section below)
             - 'iobEnabled=${config.dockerInflux.enabled:-true}'
             - 'iobStopOnUnload=${config.dockerInflux.stopIfInstanceStopped:-true}'
             - 'iobBackup=flux_data'

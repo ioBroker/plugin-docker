@@ -203,7 +203,7 @@ export default class DockerPlugin extends PluginBase {
         }
     }
 
-    async #startDockerManager(): Promise<void> {
+    async #startDockerManager(forceRestartOfExistingContainer?: boolean): Promise<void> {
         if (this.#configurations.find(conf => conf.iobEnabled !== false)) {
             this.#dockerManager ||= new DockerManagerOfOwnContainers(
                 {
@@ -218,6 +218,7 @@ export default class DockerPlugin extends PluginBase {
                     },
                     adapterDir: this.settings.adapterDir,
                     namespace: this.parentNamespace.replace('system.adapter.', '') as `${string}.${number}`,
+                    forceRestart: forceRestartOfExistingContainer,
                 },
                 this.#configurations,
             );
@@ -237,9 +238,9 @@ export default class DockerPlugin extends PluginBase {
      * This function will be called when the instance prepared all data to be copied to volume.
      * It should be only called if any container has a flag "iobWaitForReady"
      *
-     * @returns Promise which will be resolved when all containers are ready (or immediately if no container has the flag
+     * @returns Promise which will be resolved when all containers are ready (or immediate if no container has the flag
      */
-    async instanceIsReady(): Promise<void> {
-        await this.#startDockerManager();
+    async instanceIsReady(forceRestartOfExistingContainer?: boolean): Promise<void> {
+        await this.#startDockerManager(forceRestartOfExistingContainer);
     }
 }

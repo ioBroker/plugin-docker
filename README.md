@@ -180,9 +180,12 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Added the restarting option
+
 ### 0.2.1 (2026-02-09)
 - (@GermanBluefox) Correcting compare of existing and desired container configuration to avoid unnecessary restarts
-- (@GermanBluefox) Allowed using entrypoints without command
+- (@GermanBluefox) Allowed using entrypoints without a command
 
 ### 0.1.7 (2025-12-06)
 - (@GermanBluefox) Packages updated
@@ -194,7 +197,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 - (@GermanBluefox) Added `${instance}` variable to be used in docker-compose files
 
 ### 0.1.4 (2025-10-09)
-- (@GermanBluefox) Added text file read from volume
+- (@GermanBluefox) Added a text file read from volume
 
 ### 0.1.3 (2025-10-09)
 - (@GermanBluefox) Split the docker manager into pure docker commands and monitoring of own containers

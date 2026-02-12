@@ -1,5 +1,5 @@
 // This class implements docker commands using CLI, and
-// it monitors periodically the docker daemon status.
+// it periodically monitors the docker daemon status.
 // It manages containers defined in common.plugins.docker and could monitor other containers
 
 import { promisify } from 'node:util';
@@ -42,7 +42,7 @@ function size2string(size: number): string {
     return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** Parse the output of "ls -l" command into array of LsEntry */
+/** Parse the output of "ls -l" command into an array of LsEntry */
 export function parseLsLong(listing: string): LsEntry[] {
     if (!listing) {
         return [];
@@ -62,7 +62,7 @@ export function parseLsLong(listing: string): LsEntry[] {
         const end = i + 1 < matches.length ? matches[i + 1].index : listing.length;
         const entryText = listing.slice(start, end).trim();
 
-        // Split in Felder, Name kann Leerzeichen enthalten => Rest als Name nehmen
+        // Split in Felder, Name kann Leerzeichen enthalten, so Rest als Name nehmen
         const parts = entryText.split(/\s+/);
         if (parts.length < 9) {
             continue;
@@ -146,7 +146,7 @@ export default class DockerManager {
     /**
      * Get information about the Docker daemon: is it running and which version
      *
-     * @returns Object with version and daemonRunning
+     * @returns Object with a version and daemonRunning
      */
     async getDockerDaemonInfo(): Promise<{
         version?: string;
@@ -341,7 +341,7 @@ export default class DockerManager {
         if (!newImage) {
             throw new Error(`Image ${image} not found after pull`);
         }
-        // If image ID has changed, image was updated
+        // If image ID has changed, the image was updated
         return !existingImage || existingImage.id !== newImage.id ? newImage : null;
     }
 
@@ -455,7 +455,7 @@ export default class DockerManager {
                 result.total.size += size;
             }
 
-            // Build cache not available
+            // Build cache is not available
 
             return result;
         }
@@ -1953,7 +1953,7 @@ export default class DockerManager {
      *
      * @param name Volume name
      * @param driver Volume driver
-     * @param volume Volume options (depends on driver)
+     * @param volume Volume options (depends on a driver)
      */
     async volumeCreate(
         name: string,

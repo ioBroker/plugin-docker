@@ -1,5 +1,5 @@
 // This class implements docker commands using CLI, and
-// it monitors periodically the docker daemon status.
+// it periodically monitors the docker daemon status.
 // It manages containers defined in common.plugins.docker and could monitor other containers
 
 import { join } from 'path';
@@ -53,7 +53,7 @@ function deepCompare(object1: any, object2: any): boolean {
     const keys1 = Object.keys(object1);
     for (const key of keys1) {
         // ignore iob* properties as they belong to ioBroker configuration
-        // ignore hostname and dependsOn as it is only for docker-compose
+        // ignore the hostname and dependsOn as it is only for docker-compose
         if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
             continue;
         }
@@ -131,7 +131,7 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
     // We only compare keys that are in the desired config
     for (const key of keys) {
         // ignore iob* properties as they belong to ioBroker configuration
-        // ignore hostname and dependsOn as it is only for docker-compose
+        // ignore the hostname and dependsOn as it is only for docker-compose
         if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
             continue;
         }
@@ -308,7 +308,7 @@ function cleanContainerConfig(obj: ContainerConfig, mayChange?: boolean): Contai
                 delete obj.command;
                 return;
             }
-            // Make from command array with one string a string, because in this case both forms are possible
+            // Make from a command array with one string a string, because in this case both forms are possible
             if (Array.isArray(obj.command) && obj.command.length === 1 && typeof obj.command[0] === 'string') {
                 obj.command = obj.command[0];
             }
@@ -325,7 +325,8 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
     readonly #ownContainers: ContainerConfig[] = [];
     #monitoringInterval: NodeJS.Timeout | null = null;
     #ownContainersStats: { [name: string]: ContainerStatus } = {};
-    #adapterDir: string;
+    readonly #adapterDir: string;
+    readonly forceRestart: boolean;
 
     constructor(
         options: {
@@ -340,17 +341,19 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             adapterDir?: string;
             logger: ioBroker.Logger;
             namespace: `${string}.${number}`;
+            forceRestart?: boolean;
         },
         containers?: ContainerConfig[],
     ) {
         super(options);
+        this.forceRestart = options.forceRestart || false;
         this.#adapterDir = options.adapterDir || '';
         this.#ownContainers = containers || [];
         this.#waitAllChecked = new Promise<void>(resolve => (this.#waitAllCheckedResolve = resolve));
     }
 
     /**
-     * Convert information from inspect to docker configuration to start it
+     * Convert information from `inspect` to docker configuration to start it
      *
      * @param inspect Inspect information
      */
@@ -502,7 +505,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 this.log.debug(`Configuration of own container ${container.name} is up to date`);
             }
 
-            // Check if container is running
+            // Check if the container is running
             const status = await this.containerList(true);
             const containerInfo = status.find(it => it.names === container.name);
             if (containerInfo) {
@@ -518,7 +521,16 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                         this.log.warn(`Cannot start own container ${container.name}: ${e.message}`);
                     }
                 } else {
-                    this.log.debug(`Own container ${container.name} is already running`);
+                    if (this.forceRestart) {
+                        this.log.info(`Force restarting own container ${container.name}`);
+                        try {
+                            await this.containerRestart(containerInfo.id);
+                        } catch (e) {
+                            this.log.warn(`Cannot restart own container ${container.name}: ${e.message}`);
+                        }
+                    } else {
+                        this.log.debug(`Own container ${container.name} is already running`);
+                    }
                 }
             } else {
                 this.log.warn(`Own container ${container.name} not found in container list after recreation`);
@@ -536,7 +548,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             return prefix;
         }
         if (typeof containerName === 'string') {
-            // Name of the container, name of the network and name of the volume must start with iob_<Adaptername>_<instance>_
+            // The name of the container, name of the network and name of the volume must start with iob_<Adaptername>_<instance>_
             if (containerName !== prefix && !containerName.startsWith(`${prefix}_`)) {
                 this.log.debug(`Renaming container ${containerName} to be prefixed with iob_${prefix}_`);
                 return `${prefix}_${containerName}`;
@@ -673,7 +685,9 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                         }
                     }
                     if (!image) {
-                        this.log.info(`Pulling image ${container.image} for own container ${container.name}`);
+                        this.log.info(
+                            `Pulling image ${container.image} for own container ${container.name}. This may take some time...`,
+                        );
                         try {
                             const result = await this.imagePull(container.image);
                             if (result.stderr) {
@@ -684,7 +698,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                             this.log.warn(`Cannot pull image ${container.image}: ${e.message}`);
                             continue;
                         }
-                        // Check that image is available now
+                        // Check that the image is available now
                         images = await this.imageList();
                         image = images.find(it => `${it.repository}:${it.tag}` === container.image);
                         if (!image) {
@@ -725,7 +739,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         this.#waitAllCheckedResolve?.();
     }
 
-    /** Modify configuration of own container by name */
+    /** Modify the configuration of own container by name */
     async ownContainerModify(containerName: string | undefined, changes: Partial<ContainerConfig>): Promise<void> {
         containerName = this.#modifyContainerName(containerName);
         const index = this.#ownContainers.findIndex(c => c.name === containerName);
@@ -816,7 +830,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         for (let c = 0; c < this.#ownContainers.length; c++) {
             const container = this.#ownContainers[c];
             if (container.iobEnabled !== false && container.iobMonitoringEnabled && container.name) {
-                // Check if container is running
+                // Check if the container is running
                 const running = containers.find(it => it.names === container.name);
                 if (!running || (running.status !== 'running' && running.status !== 'restarting')) {
                     this.log.warn(`Own container ${container.name} is not running. Restarting...`);

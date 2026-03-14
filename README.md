@@ -180,6 +180,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Remove one log line to avoid confusion
+
 ### 0.2.2 (2026-02-12)
 - (@GermanBluefox) Added the restarting option
 

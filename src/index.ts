@@ -155,7 +155,7 @@ export default class DockerPlugin extends PluginBase {
         }
 
         if (!this.#configurations.length) {
-            this.log.info('No Docker containers to manage');
+            this.log.debug('No Docker containers to manage');
             return;
         }
 

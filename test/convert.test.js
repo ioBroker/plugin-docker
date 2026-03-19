@@ -108,7 +108,7 @@ describe('convert', () => {
             throw new Error('Label iobAutoCopyFromForce should exists');
         }
 
-        if (compose[1].environment.GF_INSTANCE !== '1') {
+        if (compose[1].environment.GF_INSTANCE !== 1) {
             throw new Error('Environment GF_INSTANCE should be set');
         }
 

@@ -1,4 +1,8 @@
+import { existsSync, readFileSync } from 'node:fs';
+import JSON5 from 'json5';
+
 import { PluginBase } from '@iobroker/plugin-base';
+
 import DockerManagerOfOwnContainers from './lib/DockerManagerOfOwnContainers';
 import DockerManager from './lib/DockerManager';
 import type {
@@ -20,8 +24,7 @@ import type {
     VolumeMount,
     LsEntry,
 } from './types';
-import { existsSync, readFileSync } from 'node:fs';
-import JSON5 from 'json5';
+
 import composeFromYaml, { type ComposeTop } from './lib/parseDockerCompose';
 import { composeToContainerConfigs } from './lib/compose2config';
 import { walkTheConfig } from './lib/templates';
@@ -83,7 +86,7 @@ export default class DockerPlugin extends PluginBase {
         }
 
         if (!this.settings.adapterDir) {
-            // somehow, the adapter used old plugin-base version. Try to find adapter directory
+            // somehow, the adapter used an old plugin-base version. Try to find the adapter directory
             const adapterName = this.settings.parentPackage.name;
             if (existsSync(`${__dirname}/../../${adapterName}`)) {
                 this.settings.adapterDir = `${__dirname}/../../${adapterName}`;
@@ -112,41 +115,39 @@ export default class DockerPlugin extends PluginBase {
             for (const filePath of pluginConfig.iobDockerComposeFiles) {
                 try {
                     const fileContent = readFileSync(`${this.settings.adapterDir}/${filePath}`, 'utf-8');
+                    let parsed: Record<string, any> | undefined;
                     if (filePath.endsWith('.json')) {
                         try {
-                            const fileJson = JSON.parse(fileContent);
-                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native, {
-                                instance,
-                            });
-                            const config = composeToContainerConfigs(pureFileConfig);
-                            this.#configurations.push(...config);
+                            parsed = JSON.parse(fileContent);
                         } catch (err) {
                             this.log.error(`Cannot parse docker config file ${filePath}: ${err}`);
                         }
                     } else if (filePath.endsWith('.json5')) {
                         try {
-                            const fileJson = JSON5.parse(fileContent);
-                            const pureFileConfig = walkTheConfig(fileJson, instanceObj.native, {
-                                instance,
-                            });
-                            const config = composeToContainerConfigs(pureFileConfig);
-                            this.#configurations.push(...config);
+                            parsed = JSON5.parse(fileContent);
                         } catch (err) {
                             this.log.error(`Cannot parse docker config file ${filePath}: ${err}`);
                         }
                     } else if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
                         try {
-                            const fileYaml = composeFromYaml(fileContent);
-                            const pureFileConfig = walkTheConfig(fileYaml, instanceObj.native, {
-                                instance,
-                            }) as ComposeTop;
-                            const config = composeToContainerConfigs(pureFileConfig);
-                            this.#configurations.push(...config);
+                            parsed = composeFromYaml(fileContent);
                         } catch (err) {
                             this.log.error(`Cannot parse docker config file ${filePath}: ${err}`);
                         }
                     } else {
                         this.log.warn(`Unknown file extension of docker config file ${filePath}`);
+                    }
+
+                    if (parsed) {
+                        const pureFileConfig = walkTheConfig(parsed, instanceObj.native, {
+                            instance,
+                        });
+                        const configs = composeToContainerConfigs(pureFileConfig);
+                        for (const config of configs) {
+                            if (config.iobEnabled) {
+                                this.#configurations.push(config);
+                            }
+                        }
                     }
                 } catch (err) {
                     this.log.error(`Cannot read docker config file ${filePath}: ${err}`);
@@ -179,7 +180,7 @@ export default class DockerPlugin extends PluginBase {
                 | undefined;
             if (nativeConfig) {
                 // Replace all iobDockerApi strings with actual config objects
-                // fallback to local socket if no system.docker object
+                // fallback to the local socket if no system.docker object
                 if (!nativeConfig.hosts[pluginConfig.iobDockerApi]) {
                     this.log.warn(`Cannot find docker configuration for ${pluginConfig.iobDockerApi}`);
                     delete pluginConfig.iobDockerApi;

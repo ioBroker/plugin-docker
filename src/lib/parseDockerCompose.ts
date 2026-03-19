@@ -156,7 +156,7 @@ export interface ComposeTop {
               key?: string;
           }
         | string; // ioBroker setting;
-    iobDockerComposeFiles?: string[]; // ioBroker setting - path to the compose file
+    iobDockerComposeFiles?: string[]; // ioBroker setting - path to the "compose" file
 
     version?: '3.9' | '3.8' | '3.7' | '3.6' | '3.5' | '3.4' | '3.3' | '3.2' | '3.1' | '3';
     services?: Record<string, ComposeService>;
@@ -372,7 +372,7 @@ function normalizeBuild(b?: ComposeBuild | string): ComposeBuild | string | unde
         out.labels = normalizeStringMap(out.labels as any) ?? {};
     }
     if (out.extra_hosts && Array.isArray(out.extra_hosts)) {
-        // keep as list "host:ip" if provided; allowed by compose
+        // keep as a list "host:ip" if provided; allowed by "compose"
         out.extra_hosts = out.extra_hosts.slice();
     }
     return out;
@@ -484,7 +484,7 @@ export default function composeFromYaml(input: string | Record<string, any>): Co
 
         // Normalize depends_on: accept array, map, or legacy boolean form
         // If someone used legacy `depends_on: { svc: { condition: service_healthy } }` we keep as-is.
-        // If they used `depends_on: [svc1, svc2]`, keep as array.
+        // If they used `depends_on: [svc1, svc2]`, keep as an array.
         s.depends_on = normalizeDependsOn(svcRaw.depends_on);
 
         if (svcRaw.stop_grace_period != null) {

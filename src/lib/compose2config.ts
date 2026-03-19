@@ -50,7 +50,7 @@ function mapPorts(ports?: ComposeService['ports']): PortBinding[] | undefined {
     const out: PortBinding[] = [];
     for (const p of ports) {
         if (typeof p === 'string') {
-            // Parse "<host>[:hostPort]:containerPort[/proto]"  OR "containerPort[/proto]"
+            // Parse "<host>[:hostPort]:containerPort[/proto]" OR "containerPort[/proto]"
             const [left, proto] = p.split('/');
             const parts = left.split(':');
             if (parts.length === 1) {
@@ -132,7 +132,7 @@ function mapVolumes(
                 });
             } else if (segs.length === 1) {
                 // anonymous volume: ":/path" not present; keep as volume with only target?
-                // Compose short form with single path means bind of current dir? Rare; ignore.
+                // Compose a short form with a single path means bind of current dir? Rare; ignore.
             }
         } else {
             const m: VolumeMount = {
@@ -144,7 +144,7 @@ function mapVolumes(
             if (v.type === 'tmpfs') {
                 tmpfs.push({ target: v.target, size: v.tmpfs?.size, mode: v.tmpfs?.mode });
             } else {
-                // If the source is missing for named anonymous volume, keep empty string (manager can resolve)
+                // If the source is missing for a named anonymous volume, keep an empty string (manager can resolve)
                 mounts.push(m);
             }
         }
@@ -184,8 +184,10 @@ function duration2ms(d?: Duration): number | undefined {
             return n;
         case 'ns':
             return Math.ceil(n / 1_000_000);
+        case 'us':
+            return Math.ceil(n / 1000);
         default:
-            return undefined; // ignore ns/us
+            return undefined;
     }
 }
 
@@ -444,7 +446,7 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
             m = m.replace('(force)', '');
             force = true;
         }
-        const parts = m.trim().split('->');
+        const parts = m.includes('=>') ? m.trim().split('=>') : m.trim().split('->');
         return {
             source: parts[0].trim(),
             target: parts[1]?.trim() || parts[0].trim(),
@@ -485,7 +487,7 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
         workdir: svc.working_dir,
         hostname: svc.hostname,
         domainname: svc.domainname,
-        // some compose variants use mac_address
+        // some composition variants use mac_address
         macAddress: (svc as any).mac_address,
 
         environment: env,
@@ -518,7 +520,7 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
 
         security: {
             privileged: svc.privileged,
-            apparmor: svc.security_opt?.find(o => o.startsWith('apparmor='))?.slice(10),
+            apparmor: svc.security_opt?.find(o => o.startsWith('apparmor='))?.slice(9),
             seccomp: svc.security_opt?.find(o => o.startsWith('seccomp='))?.slice(8),
             noNewPrivileges: svc.security_opt?.includes('no-new-privileges'),
         },

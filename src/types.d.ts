@@ -341,7 +341,7 @@ export interface DeviceMapping {
 export interface VolumeMount {
     /** bind | volume | tmpfs | npipe */
     type: 'bind' | 'volume' | 'tmpfs' | 'npipe' | 'image';
-    /** host path or named volume. true to take default name:  */
+    /** host path or named volume. true to take the default name:  */
     source?: string | true;
     /** container path (mountpoint) */
     target: string;
@@ -364,11 +364,11 @@ export interface VolumeMount {
         size?: number; // bytes
         mode?: number; // e.g. 1777
     };
-    /**  If set, this folder will be copied from host (iobAutoCopyFrom - folder) into container (only for type: "volume") */
+    /**  If set, this folder will be copied from host (iobAutoCopyFrom - folder) into the container (only for type: "volume") */
     iobAutoCopyFrom?: string;
-    /** Copy files from host to volume even if volume is not empty */
+    /** Copy files from host to volume even if the volume is not empty */
     iobAutoCopyFromForce?: boolean;
-    /** If this folder should be "backup"ed by ioBroker */
+    /** If this folder should be "backup" ed by ioBroker */
     iobBackup?: boolean;
 }
 
@@ -418,7 +418,7 @@ export interface Security {
     apparmor?: 'unconfined' | 'docker-default' | string;
     /** device cgroup rules */
     deviceCgroupRules?: string[]; // e.g. "c 189:* rmw"
-    /** extra groups inside container */
+    /** extra groups inside a container */
     groupAdd?: (number | string)[];
     /** no-new-privileges: true | false */
     noNewPrivileges?: boolean;
@@ -482,10 +482,10 @@ export interface HostMapping {
 
 // The master container configuration you can use in your manager:
 export interface ContainerConfig {
-    /** If false, container is not started, but still visible in the list */
+    /** If false, the container is not started, but still visible in the list */
     iobEnabled?: boolean; // ioBroker setting
 
-    /** If true, container is stopped when adapter unloads */
+    /** If true, the container is stopped when the adapter unloads */
     iobStopOnUnload?: boolean; // ioBroker setting
 
     /** If true, the image will be automatically updated by every start */
@@ -494,7 +494,7 @@ export interface ContainerConfig {
     /** If true, container will be monitored and if fails restarted */
     iobMonitoringEnabled?: boolean; // ioBroker setting
 
-    /** If true, docker plugin will wait for ready signal from adapter */
+    /** If true, docker plugin will wait for a ready signal from the adapter */
     iobWaitForReady?: boolean; // ioBroker setting
 
     /** Image reference (repo:tag or ID). If omitted and build is set, the image comes from build */
@@ -535,7 +535,7 @@ export interface ContainerConfig {
 
     /** Detach & Auto-remove */
     detach?: boolean; // -d
-    // If true, container is removed after exit (cannot be used with restart policies)
+    // If true, the container is removed after exit (cannot be used with restart policies)
     removeOnExit?: boolean; // --rm
 
     /** Ports */

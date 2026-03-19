@@ -180,6 +180,10 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Code refactoring.
+- (@GermanBluefox) Do not start a manager if no one container is enabled
+
 ### 0.2.3 (2026-03-14)
 - (@GermanBluefox) Remove one log line to avoid confusion
 

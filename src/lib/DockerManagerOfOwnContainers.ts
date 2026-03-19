@@ -398,7 +398,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 type: mount.Type,
                 source: mount.Source,
                 target: mount.Destination,
-                readOnly: mount.RW,
+                readOnly: !mount.RW,
             })),
             volumes: inspect.Config.Volumes ? Object.keys(inspect.Config.Volumes) : inspect.HostConfig.Binds,
             extraHosts: inspect.HostConfig.ExtraHosts ?? undefined,
@@ -488,7 +488,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         const inspect = await this.containerInspect(container.name);
         if (inspect) {
             const existingConfig = DockerManagerOfOwnContainers.mapInspectToConfig(inspect);
-            console.log('Compare existing config', existingConfig, ' and', container);
+            console.log(`Compare existing config and desired config for ${container.name}`);
             container = cleanContainerConfig(container);
             const diffs = compareConfigs(container, existingConfig);
             if (diffs.length) {

@@ -15,7 +15,7 @@ function getAttributeFromObject(instanceConfig: ioBroker.AdapterConfig, attribut
     return current;
 }
 
-/** This function get the template, extracts all patterns and replace it with values from instanceConfig */
+/** This function gets the template, extracts all patterns and replaces it with values from instanceConfig */
 export function parseField(
     field: string,
     instanceConfig: ioBroker.AdapterConfig,
@@ -47,7 +47,7 @@ export function parseField(
                 // Else replace the pattern in the string
                 field = field.replace(match[0], String(value));
             } else {
-                // If value is not found, replace with empty string
+                // If value is not found, replace it with empty string
                 field = field.replace(match[0], '');
             }
         } else if (additionalConfig[field as keyof AdditionalConfig] !== undefined) {
@@ -98,7 +98,7 @@ export function parseField(
             }
             field = field.replace(match[0], defaultValue);
         } else {
-            // If value is not found, replace with empty string
+            // If value is not found, replace it with empty string
             field = field.replace(match[0], '');
         }
     } while (match);
@@ -113,7 +113,7 @@ export function parseField(
         const value = additionalConfig[match[1] as keyof AdditionalConfig];
         if (value !== undefined) {
             // If the value is completely the pattern, return the value as is (could be non-string)
-            if (`$\{${match[0]}}` === field) {
+            if (match[0] === field) {
                 return value;
             }
             // Else replace the pattern in the string
@@ -134,7 +134,7 @@ export function parseField(
             }
             field = field.replace(match[0], defaultValue);
         } else {
-            // If value is not found, replace with empty string
+            // If value is not found, replace it with empty string
             field = field.replace(match[0], '');
         }
     } while (match);

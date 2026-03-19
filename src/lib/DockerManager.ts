@@ -272,7 +272,7 @@ export default class DockerManager {
             //              ├─  785 /usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock
             //              ├─97032 /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 5000 -container-ip 172.17.0.2 -container-port 5000 -use-listen-fd
             //              └─97039 /usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 5000 -container-ip 172.17.0.2 -container-port 5000 -use-listen-fd
-            if (stderr?.includes('could not be found') || stderr.includes('not-found')) {
+            if (stderr?.includes('could not be found') || stderr?.includes('not-found')) {
                 this.log.error(`Docker is not installed: ${stderr}`);
                 return false;
             }
@@ -1156,7 +1156,7 @@ export default class DockerManager {
             if (containers.find(it => it.id === containerInfo.id && it.status === 'running')) {
                 throw new Error(`Container ${container} still running after stop`);
             }
-            return { stdout: `Contained ${containerInfo.id} stopped`, stderr: '', containers };
+            return { stdout: `Container ${containerInfo.id} stopped`, stderr: '', containers };
         }
 
         try {
@@ -1201,7 +1201,7 @@ export default class DockerManager {
                     it => it.id === containerInfo.id && it.status !== 'running' && it.status !== 'restarting',
                 )
             ) {
-                throw new Error(`Container ${container} still running after stop`);
+                throw new Error(`Container ${container} not running after start`);
             }
             return { stdout: `Container ${containerInfo.id} started`, stderr: '', containers };
         }
@@ -1220,7 +1220,7 @@ export default class DockerManager {
                     it => it.id === containerInfo.id && it.status !== 'running' && it.status !== 'restarting',
                 )
             ) {
-                throw new Error(`Container ${container} still running after stop`);
+                throw new Error(`Container ${container} not running after start`);
             }
             return { ...result, containers };
         } catch (e) {
@@ -1290,6 +1290,23 @@ export default class DockerManager {
     async containerRemove(
         container: ContainerName,
     ): Promise<{ stdout: string; stderr: string; containers?: ContainerInfo[] }> {
+        if (this.#dockerode) {
+            let containers = await this.containerList();
+            const containerInfo = containers.find(it => it.names === container || it.id === container);
+            if (!containerInfo) {
+                throw new Error(`Container ${container} not found`);
+            }
+            const dockerContainer = this.#dockerode.getContainer(containerInfo.id);
+            if (containerInfo.status === 'running' || containerInfo.status === 'restarting') {
+                await dockerContainer.stop();
+            }
+            await dockerContainer.remove();
+            containers = await this.containerList();
+            if (containers.find(it => it.id === containerInfo.id)) {
+                throw new Error(`Container ${container} still found after remove`);
+            }
+            return { stdout: `Container ${containerInfo.id} removed`, stderr: '', containers };
+        }
         try {
             let containers = await this.containerList();
             // find ID of container
@@ -1297,7 +1314,7 @@ export default class DockerManager {
             if (!containerInfo) {
                 throw new Error(`Container ${container} not found`);
             }
-            // ensure that container is stopped
+            // ensure that the container is stopped
             if (containerInfo.status === 'running' || containerInfo.status === 'restarting') {
                 // stop container
                 const result = await this.#exec(`stop ${containerInfo.id}`);
@@ -1310,7 +1327,7 @@ export default class DockerManager {
 
             containers = await this.containerList();
             if (containers.find(it => it.id === containerInfo.id)) {
-                throw new Error(`Container ${container} still found after stop`);
+                throw new Error(`Container ${container} still found after remove`);
             }
             return { ...result, containers };
         } catch (e) {
@@ -1321,7 +1338,7 @@ export default class DockerManager {
     /**
      * List all containers
      *
-     * @param all If true, list all containers. If false, list only running containers. Default is true.
+     * @param all If true, list all containers. If false, the list only running containers. Default is true.
      */
     async containerList(all: boolean = true): Promise<ContainerInfo[]> {
         if (this.#dockerode) {
@@ -1776,6 +1793,15 @@ export default class DockerManager {
     }
 
     async networkRemove(networkId: string): Promise<{ stdout: string; stderr: string; networks?: NetworkInfo[] }> {
+        if (this.#dockerode) {
+            const network = this.#dockerode.getNetwork(networkId);
+            await network.remove();
+            const networks = await this.networkList();
+            if (networks.find(it => it.id === networkId || it.name === networkId)) {
+                throw new Error(`Network ${networkId} still found after deletion`);
+            }
+            return { stdout: `Network ${networkId} removed`, stderr: '', networks };
+        }
         const result = await this.#exec(`network remove ${networkId}`);
         const networks = await this.networkList();
         if (networks.find(it => it.id === networkId)) {
@@ -1824,7 +1850,7 @@ export default class DockerManager {
     async volumeCopyTo(volumeName: string, sourcePath: string): Promise<{ stdout: string; stderr: string }> {
         const tempContainerName = `iobroker_temp_copy_${Date.now()}`;
         if (this.#dockerode) {
-            // Check if alpine image is there
+            // Check if the alpine image is there
             const images = await this.imageList();
             if (!images.find(img => img.repository === 'alpine')) {
                 const pullResult = await this.imagePull('alpine');
@@ -1876,7 +1902,7 @@ export default class DockerManager {
 
         // create a temporary container with volume mounted
         const createResult = await this.#exec(
-            `create -rm -v ${volumeName}:/data --name ${tempContainerName} alpine sleep 60`,
+            `create --rm -v ${volumeName}:/data --name ${tempContainerName} alpine sleep 60`,
         );
         if (createResult.stderr) {
             return { stdout: '', stderr: `Cannot create temporary container: ${createResult.stderr}` };
@@ -1968,7 +1994,7 @@ export default class DockerManager {
             });
             const volumes = await this.volumeList();
             if (!volumes.find(it => it.name === name)) {
-                throw new Error(`Network ${name} not found after creation`);
+                throw new Error(`Volume ${name} not found after creation`);
             }
             return { stdout: `Volume ${vol.Name} created`, stderr: '', volumes };
         }
@@ -1987,13 +2013,22 @@ export default class DockerManager {
 
         const volumes = await this.volumeList();
         if (!volumes.find(it => it.name === name)) {
-            throw new Error(`Network ${name} not found after creation`);
+            throw new Error(`Volume ${name} not found after creation`);
         }
         return { ...result, volumes };
     }
 
     /** Remove a volume */
     async volumeRemove(volumeName: string): Promise<{ stdout: string; stderr: string; volumes?: VolumeInfo[] }> {
+        if (this.#dockerode) {
+            const volume = this.#dockerode.getVolume(volumeName);
+            await volume.remove();
+            const volumes = await this.volumeList();
+            if (volumes.find(it => it.name === volumeName)) {
+                throw new Error(`Volume ${volumeName} still found after deletion`);
+            }
+            return { stdout: `Volume ${volumeName} removed`, stderr: '', volumes };
+        }
         const result = await this.#exec(`volume remove ${volumeName}`);
         const volumes = await this.volumeList();
         if (volumes.find(it => it.name === volumeName)) {

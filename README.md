@@ -180,7 +180,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
-### 1.0.2 (2026-04-14)
+### **WORK IN PROGRESS**
 - (@GermanBluefox) Added support for shm_size
 
 ### 1.0.1 (2026-03-19)

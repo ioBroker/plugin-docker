@@ -806,6 +806,7 @@ export default class DockerManager {
                 Memory: config.resources?.memory,
                 MemorySwap: config.resources?.memorySwap,
                 MemoryReservation: config.resources?.memoryReservation,
+                ShmSize: config.resources?.shmSize,
                 // OomKillDisable: config.resources?.oomKillDisable,
                 // OomScoreAdj: config.resources?.oomScoreAdj,
                 LogConfig: config.logging
@@ -1716,6 +1717,9 @@ export default class DockerManager {
         }
         if (config.resources?.memory) {
             args.push('--memory', String(config.resources.memory));
+        }
+        if (config.resources?.shmSize) {
+            args.push('--shm-size', String(config.resources.shmSize));
         }
 
         // image

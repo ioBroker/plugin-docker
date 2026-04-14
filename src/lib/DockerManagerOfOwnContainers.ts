@@ -106,7 +106,7 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
             .map(p => ({ ...p }))
             .sort((a, b) => {
                 if (a.hostPort !== b.hostPort) {
-                    return parseInt(a.containerPort as string, 10) - parseInt(b.containerPort as string, 10);
+                    return parseInt(a.hostPort as string, 10) - parseInt(b.hostPort as string, 10);
                 }
                 if (a.hostIP !== b.hostIP && a.hostIP && b.hostIP) {
                     return a.hostIP?.localeCompare(b.hostIP);
@@ -119,7 +119,7 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
             .map(p => ({ ...p }))
             .sort((a, b) => {
                 if (a.hostPort !== b.hostPort) {
-                    return parseInt(a.containerPort as string, 10) - parseInt(b.containerPort as string, 10);
+                    return parseInt(a.hostPort as string, 10) - parseInt(b.hostPort as string, 10);
                 }
                 if (a.hostIP !== b.hostIP && a.hostIP && b.hostIP) {
                     return a.hostIP?.localeCompare(b.hostIP);
@@ -240,7 +240,7 @@ function cleanContainerConfig(obj: ContainerConfig, mayChange?: boolean): Contai
             }
             obj.ports?.sort((a, b) => {
                 if (a.hostPort !== b.hostPort) {
-                    return parseInt(a.containerPort as string, 10) - parseInt(b.containerPort as string, 10);
+                    return parseInt(a.hostPort as string, 10) - parseInt(b.hostPort as string, 10);
                 }
                 if (a.hostIP !== b.hostIP && a.hostIP && b.hostIP) {
                     return a.hostIP?.localeCompare(b.hostIP);
@@ -802,16 +802,21 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         const prefix = this.getDefaultContainerName();
         try {
             const networks = await this.networkList();
-            if (networks.find(n => n.name === containerName && n.name.startsWith(`${prefix}_`))) {
-                await this.networkRemove(containerName);
+
+            for (const n of networks) {
+                if (n.name.startsWith(`${prefix}_`) || n.name === prefix) {
+                    await this.networkRemove(n.name);
+                }
             }
         } catch {
             // ignore, as maybe it used by someone else
         }
         try {
             const volumes = await this.volumeList();
-            if (volumes.find(v => v.name === containerName && v.name.startsWith(`${prefix}_`))) {
-                await this.volumeRemove(containerName);
+            for (const v of volumes) {
+                if (v.name.startsWith(`${prefix}_`) || v.name === prefix) {
+                    await this.volumeRemove(v.name);
+                }
             }
         } catch {
             // ignore, as maybe it used by someone else

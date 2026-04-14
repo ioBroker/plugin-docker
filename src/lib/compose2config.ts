@@ -19,6 +19,33 @@ type Duration = `${number}ns` | `${number}us` | `${number}ms` | `${number}s` | `
 
 const isObject = (v: any): v is Record<string, any> => v && typeof v === 'object' && !Array.isArray(v);
 
+/** Parse a Docker size string like "256m", "1g", "512k", "1024" into bytes */
+function parseSizeToBytes(size: string | number | undefined): number | undefined {
+    if (size == null) {
+        return undefined;
+    }
+    if (typeof size === 'number') {
+        return size;
+    }
+    const match = size.match(/^(\d+(?:\.\d+)?)\s*([kmgtKMGT])?[bB]?$/);
+    if (!match) {
+        return undefined;
+    }
+    const value = parseFloat(match[1]);
+    switch (match[2]?.toLowerCase()) {
+        case 'k':
+            return Math.round(value * 1024);
+        case 'm':
+            return Math.round(value * 1024 * 1024);
+        case 'g':
+            return Math.round(value * 1024 * 1024 * 1024);
+        case 't':
+            return Math.round(value * 1024 * 1024 * 1024 * 1024);
+        default:
+            return Math.round(value);
+    }
+}
+
 function normalizeEnv(env?: ComposeService['environment']): EnvVar | undefined {
     if (!env) {
         return undefined;
@@ -260,8 +287,11 @@ function mapRestart(r?: ComposeService['restart']): Restart | undefined {
         return undefined;
     }
     if (r.startsWith('on-failure')) {
+        const parts = r.split(':');
+        const maxRetries = parts.length > 1 ? parseInt(parts[1], 10) : undefined;
         return {
             policy: 'on-failure',
+            maxRetries: maxRetries && !isNaN(maxRetries) ? maxRetries : undefined,
         };
     }
     return {
@@ -537,6 +567,9 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
         tmpfs,
 
         readOnly: svc.read_only,
+
+        resources:
+            parseSizeToBytes(svc.shm_size) !== undefined ? { shmSize: parseSizeToBytes(svc.shm_size) } : undefined,
 
         build,
     };

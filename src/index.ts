@@ -139,12 +139,18 @@ export default class DockerPlugin extends PluginBase {
                     }
 
                     if (parsed) {
-                        const pureFileConfig = walkTheConfig(parsed, instanceObj.native, {
+                        const pureFileConfig: ComposeTop = walkTheConfig(parsed, instanceObj.native, {
                             instance,
                         });
+                        this.log.debug(
+                            `Rendered docker-compose file for docker ${filePath}: ${JSON.stringify(pureFileConfig)}`,
+                        );
                         const configs = composeToContainerConfigs(pureFileConfig);
                         for (const config of configs) {
                             if (config.iobEnabled) {
+                                this.log.debug(
+                                    `Use following config for docker ${filePath}: ${JSON.stringify(config)}`,
+                                );
                                 this.#configurations.push(config);
                             }
                         }

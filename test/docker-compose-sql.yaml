@@ -23,6 +23,7 @@ services:
         networks:
             - true
         restart: unless-stopped
+        shm_size: '${config.dockerMysql.shmSize:-256}m'
 
     phpmyadmin:
         image: phpmyadmin:latest
@@ -33,7 +34,7 @@ services:
         container_name: phpmyadmin
         depends_on:
             - mysql
-        # By default bind on all interfaces (per your config comment)
+        # By default, bind on all interfaces (per your config comment)
         ports:
             - '${config.dockerPhpMyAdmin.bind:-0.0.0.0}:${config_dockerPhpMyAdmin_port:-8080}:8080'
         environment:

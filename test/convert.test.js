@@ -11,6 +11,7 @@ const sqlConfig = {
         port: '3306',
         autoImageUpdate: true,
         rootPassword: 'root_iobroker',
+        shmSize: 128,
     },
     dockerPhpMyAdmin: {
         enabled: false,
@@ -61,57 +62,60 @@ describe('convert', () => {
     });
     it('it should convert SQL compose to 2 configs', () => {
         const composeWithTemplates = composeFromYaml.default(yamlSql);
-        const configs = composeToContainerConfigs(composeWithTemplates);
-        const compose = walkTheConfig(configs, sqlConfig, { instance: 1 });
-        if (JSON.stringify(compose, null, 2).includes('{{') || JSON.stringify(compose, null, 2).includes('${')) {
+        const compose = walkTheConfig(composeWithTemplates, sqlConfig, { instance: 1 });
+        const configs = composeToContainerConfigs(compose);
+        if (JSON.stringify(configs, null, 2).includes('{{') || JSON.stringify(configs, null, 2).includes('${')) {
             throw new Error('Not all templates were replaced');
         }
-        if (compose[0].iobEnabled !== false) {
+        if (configs[0].iobEnabled !== false) {
             throw new Error('Label iobEnabled should be removed');
         }
-        if (!compose[0].iobStopOnUnload) {
+        if (!configs[0].iobStopOnUnload) {
             throw new Error('Label iobStopOnUnload should exists');
         }
-        if (!compose[0].mounts[0].iobBackup) {
+        if (!configs[0].mounts[0].iobBackup) {
             throw new Error('Label iobBackup should exists');
+        }
+        if (configs[0].resources.shmSize !== 134217728) {
+            throw new Error(`Label shm_size should exists: ${JSON.stringify(configs, null, 2)}`);
         }
 
         console.log(JSON.stringify(compose, null, 2));
     });
     it('it should convert influxdb to 2 configs', () => {
         const composeWithTemplates = composeFromYaml.default(yamlInflux);
-        const configs = composeToContainerConfigs(composeWithTemplates);
-        const compose = walkTheConfig(configs, influxConfig, { instance: 1 });
-        if (JSON.stringify(compose, null, 2).includes('{{') || JSON.stringify(compose, null, 2).includes('${')) {
+        const compose = walkTheConfig(composeWithTemplates, influxConfig, { instance: 1 });
+        const configs = composeToContainerConfigs(compose);
+        if (JSON.stringify(configs, null, 2).includes('{{') || JSON.stringify(configs, null, 2).includes('${')) {
             throw new Error('Not all templates were replaced');
         }
-        if (compose[0].iobEnabled !== false) {
+        if (configs[0].iobEnabled !== false) {
             throw new Error('Label iobEnabled should be removed');
         }
-        if (!compose[0].iobStopOnUnload) {
+        if (!configs[0].iobStopOnUnload) {
             throw new Error('Label iobStopOnUnload should exists');
         }
-        if (!compose[0].mounts[0].iobBackup) {
+        if (!configs[0].mounts[0].iobBackup) {
             throw new Error('Label iobBackup should exists');
         }
 
-        if (!compose[1].mounts[0].iobAutoCopyFrom) {
+        if (!configs[1].mounts[0].iobAutoCopyFrom) {
             throw new Error('Label iobAutoCopyFrom should exists');
         }
-        if (compose[1].mounts[0].iobAutoCopyFromForce !== undefined) {
+        if (configs[1].mounts[0].iobAutoCopyFromForce !== undefined) {
             throw new Error('Label iobAutoCopyFromForce should not exists');
         }
-        if (!compose[1].mounts[1].iobAutoCopyFrom) {
+        if (!configs[1].mounts[1].iobAutoCopyFrom) {
             throw new Error('Label iobAutoCopyFrom should exists');
         }
-        if (compose[1].mounts[1].iobAutoCopyFromForce === undefined) {
+        if (configs[1].mounts[1].iobAutoCopyFromForce === undefined) {
             throw new Error('Label iobAutoCopyFromForce should exists');
         }
 
-        if (compose[1].environment.GF_INSTANCE !== 1) {
+        if (configs[1].environment.GF_INSTANCE !== "1") {
             throw new Error('Environment GF_INSTANCE should be set');
         }
 
-        console.log(JSON.stringify(compose, null, 2));
+        console.log(JSON.stringify(configs, null, 2));
     });
 });

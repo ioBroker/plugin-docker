@@ -50,9 +50,9 @@ export function parseField(
                 // If value is not found, replace it with empty string
                 field = field.replace(match[0], '');
             }
-        } else if (additionalConfig[field as keyof AdditionalConfig] !== undefined) {
+        } else if (additionalConfig[match[1] as keyof AdditionalConfig] !== undefined) {
             // Support also {{instance}} pattern
-            const value = additionalConfig[field as keyof AdditionalConfig];
+            const value = additionalConfig[match[1] as keyof AdditionalConfig];
             if (match[0] === field) {
                 return value;
             }

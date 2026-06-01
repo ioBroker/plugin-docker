@@ -56,7 +56,7 @@
   },
   "devDependencies": {
     "@alcalzone/esm2cjs": "^1.4.2",
-    "@iobroker/eslint-config": "^2.2.0",
+    "@iobroker/eslint-config": "^2.3.4",
     "@iobroker/db-states-redis": "^7.1.0",
     "@iobroker/db-objects-redis": "^7.1.0",
     "@alcalzone/release-script": "^5.1.1",

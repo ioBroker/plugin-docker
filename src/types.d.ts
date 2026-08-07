@@ -728,6 +728,8 @@ export interface ContainerStatus extends ContainerStats {
 
 export interface LsEntry {
     name: string;
+    /** Target of a symlink - `ls -l` prints it as "name -> target", it is not part of the name */
+    linkTarget?: string;
     permissions: string;
     links?: number;
     owner?: string;

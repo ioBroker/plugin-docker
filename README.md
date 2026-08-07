@@ -180,6 +180,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Better interpretation of docker-compose files
+
 ### 1.0.3 (2026-04-14)
 - (@GermanBluefox) Added support for shm_size
 

@@ -42,52 +42,88 @@ function size2string(size: number): string {
     return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-/** Parse the output of "ls -l" command into an array of LsEntry */
+/**
+ * Unwrap Docker's multiplexed stream format.
+ *
+ * A container that runs without a TTY does not get a plain byte stream: Docker frames it as
+ * repeating `[8 byte header][payload]`, where byte 0 is the stream (0 stdin, 1 stdout, 2 stderr),
+ * bytes 1-3 are zero and bytes 4-7 are the payload length as a big-endian uint32. Passing that
+ * buffer straight to `toString()` puts those 8 bytes into the text, which is why every chunk used
+ * to start with a replacement character followed by three stray ASCII characters.
+ *
+ * A container *with* a TTY streams raw text and has no headers. Rather than asking the daemon
+ * which one it is, every frame header is validated here - the first byte that cannot be one is
+ * taken as the start of unframed data and the rest is returned verbatim.
+ */
+export function demuxDockerStream(buffer: Buffer): string {
+    let result = '';
+    let offset = 0;
+
+    while (offset + 8 <= buffer.length) {
+        const stream = buffer[offset];
+        if (stream > 2 || buffer[offset + 1] !== 0 || buffer[offset + 2] !== 0 || buffer[offset + 3] !== 0) {
+            // Not a header - the container had a TTY, or the framing ended here
+            return result + buffer.subarray(offset).toString('utf8');
+        }
+        const length = buffer.readUInt32BE(offset + 4);
+        offset += 8;
+        result += buffer.subarray(offset, offset + length).toString('utf8');
+        offset += length;
+    }
+
+    return offset < buffer.length ? result + buffer.subarray(offset).toString('utf8') : result;
+}
+
+/**
+ * One line of `ls -l` output, in order:
+ *   type+permissions, link count, owner, group, size (or "major, minor" for devices),
+ *   date as the three fields `ls` prints (`Oct  9 14:17` or `Oct  9  2024`), then the name.
+ *
+ * The first character is the inode type - `-` file, `d` dir, `l` symlink, `b`/`c` device,
+ * `p` FIFO, `s` socket. The permission bits are not just `rwx-`: setuid/setgid show as `s`/`S`
+ * and the sticky bit (`/tmp`) as `t`/`T`. A trailing `+`, `@` or `.` marks ACLs, xattrs or an
+ * SELinux context.
+ */
+const LS_LINE_REGEX =
+    /^([bcdlps-][rwxsStT-]{9}[+@.]?)\s+(\d+)\s+(\S+)\s+(\S+)\s+(?:\d+,\s*\d+|(\d+))\s+(\S+\s+\S+\s+\S+)\s+(.+)$/;
+
+/**
+ * Parse the output of a "ls -l" command into an array of LsEntry.
+ *
+ * Parses line by line: a line that does not look like an entry (`total 12`, error output) is
+ * skipped on its own. The previous implementation cut the listing apart at the permission
+ * matches instead, so any type it did not recognize - a device, socket or a sticky directory -
+ * was not merely skipped, its whole line was appended to the name of the entry before it.
+ */
 export function parseLsLong(listing: string): LsEntry[] {
     if (!listing) {
         return [];
     }
 
-    // Find all Permission-Marks as "drwxrwxr-x+" or "-rw-r--r--"
-    const permRegex = /[dl-][rwx-]{9}\+?/g;
-    const matches = Array.from(listing.matchAll(permRegex));
-    if (matches.length === 0) {
-        return [];
-    }
-
     const result: LsEntry[] = [];
 
-    for (let i = 0; i < matches.length; i++) {
-        const start = matches[i].index;
-        const end = i + 1 < matches.length ? matches[i + 1].index : listing.length;
-        const entryText = listing.slice(start, end).trim();
-
-        // Split in Felder, Name kann Leerzeichen enthalten, so Rest als Name nehmen
-        const parts = entryText.split(/\s+/);
-        if (parts.length < 9) {
+    for (const line of listing.split('\n')) {
+        const match = LS_LINE_REGEX.exec(line.trim());
+        if (!match) {
             continue;
         }
-
-        const permissions = parts[0];
-        const links = Number.isFinite(Number(parts[1])) ? parseInt(parts[1], 10) : undefined;
-        const owner = parts[2];
-        const group = parts[3];
-        const size = parseInt(parts[4], 10) || 0;
-        const month = parts[5];
-        const day = parts[6];
-        const timeOrYear = parts[7];
-        const name = parts.slice(8).join(' ');
+        const [, permissions, links, owner, group, size, rawDate, rest] = match;
+        const isLink = permissions.charAt(0) === 'l';
+        // `ls -l` renders a symlink as "name -> target", so only the part before the arrow is the name
+        const arrow = isLink ? rest.indexOf(' -> ') : -1;
 
         result.push({
-            name,
+            name: arrow === -1 ? rest : rest.slice(0, arrow),
+            linkTarget: arrow === -1 ? undefined : rest.slice(arrow + 4),
             permissions,
-            links,
+            links: parseInt(links, 10),
             owner,
             group,
-            size,
-            rawDate: `${month} ${day} ${timeOrYear}`,
+            // Block and char devices print "major, minor" where the size would be - report them as 0
+            size: size ? parseInt(size, 10) : 0,
+            rawDate,
             isDir: permissions.charAt(0) === 'd',
-            isLink: permissions.charAt(0) === 'l',
+            isLink,
         });
     }
 
@@ -764,6 +800,11 @@ export default class DockerManager {
             HostConfig: {
                 // https://github.com/apocas/dockerode/issues/265#issuecomment-462786936
                 Binds: config.volumes,
+                // The CLI path renders `removeOnExit` as `--rm` in `toDockerRun`. Without the
+                // equivalent here every short-lived container started over the socket/API survived
+                // as an exited leftover - the `iobroker_temp_ls_*` containers that volume browsing
+                // produced on every single directory listing.
+                AutoRemove: config.removeOnExit || undefined,
                 PortBindings: config.ports
                     ? config.ports.reduce(
                           (acc, port) => {
@@ -1457,8 +1498,7 @@ export default class DockerManager {
                     follow: false,
                     tail: options.tail || undefined,
                 });
-                return data
-                    .toString()
+                return demuxDockerStream(data)
                     .split('\n')
                     .filter(line => line.trim() !== '');
             } catch (e) {

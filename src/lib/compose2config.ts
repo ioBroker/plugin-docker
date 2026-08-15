@@ -372,14 +372,11 @@ function mapNetworks(
     const out: NetworkAttachment[] = [];
     if (Array.isArray(n)) {
         for (const item of n) {
-            if (typeof item === 'string' && globalNetworks?.[item]) {
-                // Just network name, and defined in global networks
-                // todo
-            } else if (typeof item === 'string') {
-                out.push({ name: item });
-            } else {
+            if (typeof item === 'string') {
+                out.push(resolveGlobalNetwork(item, globalNetworks));
+            } else if (isObject(item)) {
                 out.push({
-                    name: item.name,
+                    ...resolveGlobalNetwork(item.name, globalNetworks),
                     aliases: item.aliases,
                     ipv4Address: item.ipv4_address,
                     ipv6Address: item.ipv6_address,
@@ -389,21 +386,65 @@ function mapNetworks(
     } else if (isObject(n)) {
         // Map string-map form: { netA: {}, netB: { aliases: [...] } }
         for (const [name, cfg] of Object.entries(n)) {
-            if (cfg == null) {
-                out.push({ name });
-            } else if (isObject(cfg)) {
+            if (isObject(cfg)) {
                 out.push({
-                    name,
+                    ...resolveGlobalNetwork(name, globalNetworks),
                     aliases: (cfg as any).aliases,
                     ipv4Address: (cfg as any).ipv4_address,
                     ipv6Address: (cfg as any).ipv6_address,
                 });
             } else {
-                out.push({ name });
+                out.push(resolveGlobalNetwork(name, globalNetworks));
             }
         }
     }
     return out.length ? out : undefined;
+}
+
+/**
+ * Resolve a network reference from a service against the top-level `networks:` block.
+ *
+ * Compose lets the top-level entry rename the network (`name:`) or mark it as pre-existing
+ * (`external: true` / `external: { name }`). External networks are used verbatim - they must
+ * neither be prefixed with the ioBroker namespace nor created by us.
+ */
+function resolveGlobalNetwork(key: string | undefined, globalNetworks?: Record<string, any>): NetworkAttachment {
+    if (!key) {
+        return {};
+    }
+    const global = globalNetworks?.[key];
+    if (!global) {
+        return { name: key };
+    }
+    if (global.external) {
+        return {
+            name: (isObject(global.external) ? global.external.name : undefined) || global.name || key,
+            external: true,
+        };
+    }
+    return { name: global.name || key, driverOpts: global.driver_opts };
+}
+
+/**
+ * Map compose `network_mode` to the internal `networkMode`.
+ *
+ * `service:<name>` is compose-only - Docker itself only knows `container:<name|id>` - so it is
+ * resolved to the container name of the referenced service here. The ioBroker prefix is applied
+ * later in DockerManagerOfOwnContainers, to the referenced container and this reference alike.
+ */
+function mapNetworkMode(mode: string, compose: ComposeTop): { networkMode: string; networkContainer?: string } {
+    const trimmed = mode.trim();
+
+    if (trimmed.startsWith('service:')) {
+        const service = trimmed.slice('service:'.length).trim();
+        const target = compose.services?.[service]?.container_name || service;
+        return { networkMode: `container:${target}`, networkContainer: target };
+    }
+    if (trimmed.startsWith('container:')) {
+        const target = trimmed.slice('container:'.length).trim();
+        return { networkMode: `container:${target}`, networkContainer: target };
+    }
+    return { networkMode: trimmed };
 }
 
 /* ============== Main converter ============== */
@@ -433,7 +474,18 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
     const healthcheck = mapHealthcheck(svc.healthcheck);
     const restart = mapRestart(svc.restart);
     const labels = normalizeLabels(svc.labels);
-    const networks = mapNetworks(svc.networks, compose.networks);
+    // `network_mode` and `networks` are mutually exclusive in compose - `network_mode` wins.
+    // Otherwise the first entry of `networks` becomes the network the container is created in,
+    // because docker can only attach one network at creation time; the rest is connected afterwards.
+    let networks = mapNetworks(svc.networks, compose.networks);
+    let networkMode: string | undefined;
+    let networkContainer: string | undefined;
+    if (svc.network_mode) {
+        ({ networkMode, networkContainer } = mapNetworkMode(svc.network_mode, compose));
+        networks = undefined;
+    } else if (networks?.length) {
+        networkMode = networks[0].name;
+    }
 
     // Build mapping
     let build: ContainerConfig['build'] | undefined;
@@ -536,6 +588,8 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
         extraHosts,
         dns,
 
+        networkMode,
+        networkContainer,
         networks,
 
         healthcheck,

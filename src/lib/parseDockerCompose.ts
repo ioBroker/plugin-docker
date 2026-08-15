@@ -117,6 +117,12 @@ export interface ComposeService {
         | Array<string | { name: string; aliases?: string[]; ipv4_address?: string; ipv6_address?: string }>
         | StringMap;
 
+    /**
+     * `host`, `none`, `bridge`, a custom network name, `container:<name|id>` or the
+     * compose-only form `service:<serviceName>`. Mutually exclusive with `networks`.
+     */
+    network_mode?: string;
+
     healthcheck?: ComposeHealthcheck;
 
     restart?: RestartPolicy;
@@ -303,17 +309,35 @@ function normalizeVolumes(vols?: ComposeService['volumes']): ComposeService['vol
     });
 }
 
+/**
+ * Normalize both compose forms - `networks: [a, b]` and `networks: {a: {...}, b: null}` - to the
+ * array form, reducing entries without options to a plain string.
+ *
+ * Everything that carries no data has to end up as a string, because cleanUndefined() strips empty
+ * objects and nulls from the whole tree and would otherwise drop those networks silently. The same
+ * applies to `- true`, which YAML parses as a boolean while ioBroker uses it as a network name.
+ */
 function normalizeNetworks(n?: ComposeService['networks']): ComposeService['networks'] | undefined {
     if (!n) {
         return undefined;
     }
-    if (Array.isArray(n)) {
-        return n.map(item => (typeof item === 'string' ? item : { ...item }));
-    }
-    if (isObject(n)) {
-        return { ...n } as any;
-    } // StringMap form
-    return undefined;
+    const entries: Array<string | Record<string, any>> = Array.isArray(n)
+        ? n.map(item => (isObject(item) ? { ...item } : String(item)))
+        : isObject(n)
+          ? Object.entries(n as Record<string, any>).map(([name, cfg]) =>
+                isObject(cfg) ? { ...cfg, name } : String(name),
+            )
+          : [];
+
+    const out = entries.map(item => {
+        if (typeof item === 'string') {
+            return item;
+        }
+        const { name, ...options } = item;
+        return Object.keys(options).length ? item : String(name);
+    });
+
+    return out.length ? (out as ComposeService['networks']) : undefined;
 }
 
 function normalizeLabels(labels?: ComposeService['labels']): ComposeService['labels'] | undefined {
@@ -475,6 +499,9 @@ export default function composeFromYaml(input: string | Record<string, any>): Co
         s.dns_opt = arrify(svcRaw.dns_opt);
 
         s.networks = normalizeNetworks(svcRaw.networks);
+        if (svcRaw.network_mode != null) {
+            s.network_mode = String(svcRaw.network_mode);
+        }
 
         s.healthcheck = normalizeHealthcheck(svcRaw.healthcheck);
 

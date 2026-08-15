@@ -180,6 +180,11 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Applied `network_mode` from the compose file, including `container:<name>` and `service:<name>`
+- (@GermanBluefox) Fixed resolution of `networks`: entries declared in the top-level `networks` block, the `true` shorthand and option-less entries of the mapping form were dropped silently
+- (@GermanBluefox) Networks beyond the first one are now connected to the container, external networks are used verbatim
+
 ### 1.0.4 (2026-08-07)
 - (@GermanBluefox) Better interpretation of docker-compose files
 

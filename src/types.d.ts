@@ -265,8 +265,9 @@ export type DockerImageInspect = {
 
 // Enums & Helper Types
 export type Protocol = 'tcp' | 'udp' | 'sctp';
+// `container:<id|name>` is passed to docker verbatim; the bare target is additionally kept in networkContainer
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-export type NetworkMode = 'bridge' | 'host' | 'none' | 'container' | string; // with container:<id|name> in networkContainer // custom network name
+export type NetworkMode = 'bridge' | 'host' | 'none' | `container:${string}` | string; // custom network name
 export type RestartPolicy = 'no' | 'always' | 'unless-stopped' | 'on-failure';
 export type LogDriver =
     | 'json-file'
@@ -445,6 +446,8 @@ export interface NetworkAttachment {
     links?: string[];
     /** driver options (compose) */
     driverOpts?: Record<string, string>;
+    /** pre-existing network (compose `external`): used verbatim, never prefixed nor created by us */
+    external?: boolean;
 }
 
 export interface BuildConfig {

@@ -64,6 +64,16 @@ function deepCompare(object1: any, object2: any): boolean {
     return true;
 }
 
+/**
+ * Keys that must not take part in the recreate decision.
+ *
+ * `networks` is reconciled by connecting the missing ones to the running container, so a
+ * difference must not force a recreate. Docker also reports generated aliases and the effective
+ * IPs there, which would never match the compose file and would recreate the container endlessly.
+ * The network the container was *created* in is still compared, via `networkMode`.
+ */
+const ignoredOnCompare = ['hostname', 'dependsOn', 'devices', 'networks'];
+
 function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): string[] {
     const diffs: string[] = [];
     const desired: ContainerConfig = JSON.parse(JSON.stringify(_desired));
@@ -132,7 +142,7 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
     for (const key of keys) {
         // ignore iob* properties as they belong to ioBroker configuration
         // ignore the hostname and dependsOn as it is only for docker-compose
-        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
+        if (key.startsWith('iob') || ignoredOnCompare.includes(key)) {
             continue;
         }
         if (typeof desired[key] === 'object' && desired[key] !== null) {
@@ -490,7 +500,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             const existingConfig = DockerManagerOfOwnContainers.mapInspectToConfig(inspect);
             console.log(`Compare existing config and desired config for ${container.name}`);
             container = cleanContainerConfig(container);
-            const diffs = compareConfigs(container, existingConfig);
+            const diffs = compareConfigs(await this.#resolveNetworkContainerReference(container), existingConfig);
             if (diffs.length) {
                 this.log.info(
                     `Configuration of own container ${container.name} has changed: ${diffs.join(
@@ -500,9 +510,12 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 const result = await this.containerReCreate(container);
                 if (result.stderr) {
                     this.log.warn(`Cannot recreate own container ${container.name}: ${result.stderr}`);
+                } else {
+                    await this.#connectSecondaryNetworks(container);
                 }
             } else {
                 this.log.debug(`Configuration of own container ${container.name} is up to date`);
+                await this.#connectSecondaryNetworks(container);
             }
 
             // Check if the container is running
@@ -538,6 +551,57 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         }
     }
 
+    /**
+     * Docker reports `container:<id>` in the inspect data, while our configuration holds
+     * `container:<name>`. Without resolving the name to the id the two would never match and the
+     * container would be recreated on every check.
+     *
+     * @param container desired configuration
+     * @returns a copy with the resolved reference, or the unchanged config
+     */
+    async #resolveNetworkContainerReference(container: ContainerConfig): Promise<ContainerConfig> {
+        if (typeof container.networkMode !== 'string' || !container.networkMode.startsWith('container:')) {
+            return container;
+        }
+        const targetName = container.networkMode.slice('container:'.length);
+        const target = (await this.containerList(true)).find(it => it.names === targetName);
+        if (!target) {
+            return container;
+        }
+        return { ...container, networkMode: `container:${target.id}` };
+    }
+
+    /**
+     * Connect the container to every network beyond the one it was created in.
+     *
+     * Docker attaches only a single network at creation time, so the remaining ones of a compose
+     * `networks:` list have to be connected once the container exists.
+     *
+     * @param container desired configuration, with network names already prefixed
+     */
+    async #connectSecondaryNetworks(container: ContainerConfig): Promise<void> {
+        const secondary = DockerManager.getSecondaryNetworks(container);
+        if (!secondary.length || typeof container.name !== 'string') {
+            return;
+        }
+        const inspect = await this.containerInspect(container.name);
+        const connected = Object.keys(inspect?.NetworkSettings?.Networks || {});
+
+        for (const network of secondary) {
+            if (!network.name || connected.includes(network.name)) {
+                continue;
+            }
+            const result = await this.networkConnect(container.name, network);
+            if (result.stderr) {
+                this.log.warn(
+                    `Cannot connect own container ${container.name} to network ${network.name}: ${result.stderr}`,
+                );
+            } else {
+                this.log.info(`Connected own container ${container.name} to network ${network.name}`);
+            }
+        }
+    }
+
     getDefaultContainerName(): string {
         return `iob_${this.namespace.replace(/[-.]/g, '_')}`;
     }
@@ -556,6 +620,85 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             return containerName;
         }
         throw new Error(`Container name must be a string, but got boolean ${containerName as any}`);
+    }
+
+    /**
+     * Network modes that address something other than a docker network and must never be
+     * prefixed or created.
+     */
+    static #isReservedNetworkMode(mode: string): boolean {
+        return mode === 'host' || mode === 'bridge' || mode === 'none' || mode.startsWith('container:');
+    }
+
+    /**
+     * The name of a network must start with iob_<Adaptername>_<instance>_, like container and volume names.
+     * `true` is the shorthand for the shared default network of this instance.
+     */
+    #modifyNetworkName(networkName: string | true): string {
+        const prefix = this.getDefaultContainerName();
+        if (networkName === true || networkName === 'true') {
+            return prefix;
+        }
+        if (networkName === 'iobroker' || networkName === prefix || networkName.startsWith(`${prefix}_`)) {
+            return networkName;
+        }
+        this.log.debug(`Renaming network ${networkName} to be prefixed with ${prefix}_`);
+        return `${prefix}_${networkName}`;
+    }
+
+    /**
+     * Apply the ioBroker naming rules to all networks of a container.
+     *
+     * Modifies `networkMode`, `networkContainer` and `networks` of the given configuration in place.
+     * Reserved modes (`host`, `bridge`, `none`), `container:<name>` references and external networks
+     * are never prefixed - only the reference target of `container:<name>` follows the renaming of
+     * the container it points to.
+     *
+     * @param container container configuration, modified in place
+     * @returns names of the networks that must exist before the container can be created
+     */
+    normalizeContainerNetworks(container: ContainerConfig): string[] {
+        if (container.networkMode === true) {
+            container.networkMode = 'true';
+        }
+
+        if (typeof container.networkMode === 'string' && container.networkMode.startsWith('container:')) {
+            // Shares the network stack of another container instead of joining a network.
+            // That container is prefixed as well, so the reference has to follow it.
+            const target = this.#modifyContainerName(container.networkMode.slice('container:'.length));
+            container.networkMode = `container:${target}`;
+            container.networkContainer = target;
+            return [];
+        }
+
+        const primaryName = container.networkMode;
+        const toEnsure: string[] = [];
+
+        for (const attachment of container.networks || []) {
+            if (!attachment.name) {
+                continue;
+            }
+            const isPrimary = attachment.name === primaryName;
+            if (!attachment.external) {
+                attachment.name = this.#modifyNetworkName(attachment.name);
+                toEnsure.push(attachment.name);
+            }
+            if (isPrimary) {
+                container.networkMode = attachment.name;
+            }
+        }
+
+        // `network_mode: <custom network>` has no matching entry in `networks`
+        if (
+            typeof container.networkMode === 'string' &&
+            !DockerManagerOfOwnContainers.#isReservedNetworkMode(container.networkMode) &&
+            !container.networks?.some(n => n.name === container.networkMode)
+        ) {
+            container.networkMode = this.#modifyNetworkName(container.networkMode);
+            toEnsure.push(container.networkMode);
+        }
+
+        return toEnsure;
     }
 
     async #checkOwnContainers(): Promise<void> {
@@ -580,36 +723,19 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 container.name = this.#modifyContainerName(container.name);
 
                 try {
-                    // create iobroker network if necessary
-                    if (
-                        container.networkMode &&
-                        container.networkMode !== 'container' &&
-                        container.networkMode !== 'host' &&
-                        container.networkMode !== 'bridge' &&
-                        container.networkMode !== 'none'
-                    ) {
-                        if (container.networkMode === true || container.networkMode === 'true') {
-                            container.networkMode = prefix;
+                    // create iobroker networks if necessary
+                    for (const networkName of this.normalizeContainerNetworks(container)) {
+                        if (networkChecked.includes(networkName)) {
+                            continue;
                         }
-                        if (
-                            container.networkMode !== 'iobroker' &&
-                            container.networkMode !== prefix &&
-                            !container.networkMode.startsWith(`${prefix}_`)
-                        ) {
-                            this.log.debug(`Renaming network ${container.networkMode} to be prefixed with ${prefix}_`);
-                            container.networkMode = `${prefix}_${container.networkMode}`;
+                        // check if the network exists
+                        const networks = await this.networkList();
+                        if (!networks.find(it => it.name === networkName)) {
+                            this.log.info(`Creating docker network ${networkName}`);
+                            await this.networkCreate(networkName);
                         }
 
-                        if (!networkChecked.includes(container.networkMode)) {
-                            // check if the network exists
-                            const networks = await this.networkList();
-                            if (!networks.find(it => it.name === container.networkMode)) {
-                                this.log.info(`Creating docker network ${container.networkMode}`);
-                                await this.networkCreate(container.networkMode);
-                            }
-
-                            networkChecked.push(container.networkMode);
-                        }
+                        networkChecked.push(networkName);
                     }
 
                     // create all volumes ourselves, to have a static name
@@ -721,6 +847,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                             if (result.stderr) {
                                 this.log.warn(`Cannot start own container ${container.name}: ${result.stderr}`);
                             } else {
+                                await this.#connectSecondaryNetworks(container);
                                 anyStartedOrRunning ||= !!container.iobMonitoringEnabled;
                             }
                         } catch (e) {

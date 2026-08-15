@@ -16,6 +16,7 @@ import type {
     ImageName,
     NetworkInfo,
     NetworkDriver,
+    NetworkAttachment,
     VolumeInfo,
     VolumeDriver,
     LsEntry,
@@ -770,6 +771,10 @@ export default class DockerManager {
             throw new Error(`Container name must be a string, but got boolean true`);
         }
 
+        // Docker only accepts an endpoint for the network the container is created in. Aliases and
+        // static IPs of the remaining networks are applied when they are connected afterwards.
+        const primary = DockerManager.getPrimaryNetwork(config);
+
         return {
             name: config.name,
             Image: config.image,
@@ -864,10 +869,50 @@ export default class DockerManager {
                 Sysctls: config.sysctls,
                 Init: config.init,
             },
+            NetworkingConfig:
+                primary?.name && DockerManager.toEndpointSettings(primary)
+                    ? { EndpointsConfig: { [primary.name]: DockerManager.toEndpointSettings(primary)! } }
+                    : undefined,
             StopSignal: config.stop?.signal,
             StopTimeout: config.stop?.gracePeriodSec,
             Tty: config.tty,
             OpenStdin: config.openStdin,
+        };
+    }
+
+    /**
+     * The network a container is created in, i.e. the entry of `networks` that `networkMode` points to.
+     */
+    static getPrimaryNetwork(config: ContainerConfig): NetworkAttachment | undefined {
+        if (!config.networks?.length || typeof config.networkMode !== 'string') {
+            return undefined;
+        }
+        return config.networks.find(n => n.name === config.networkMode);
+    }
+
+    /**
+     * Networks that have to be connected after the container was created, because docker attaches
+     * only a single network at creation time.
+     */
+    static getSecondaryNetworks(config: ContainerConfig): NetworkAttachment[] {
+        if (!config.networks?.length) {
+            return [];
+        }
+        return config.networks.filter(n => n.name && n.name !== config.networkMode);
+    }
+
+    static toEndpointSettings(net: NetworkAttachment): Docker.EndpointSettings | undefined {
+        const ipam =
+            net.ipv4Address || net.ipv6Address
+                ? { IPv4Address: net.ipv4Address, IPv6Address: net.ipv6Address }
+                : undefined;
+        if (!net.aliases?.length && !ipam && !net.driverOpts) {
+            return undefined;
+        }
+        return {
+            Aliases: net.aliases?.length ? net.aliases : undefined,
+            DriverOpts: net.driverOpts,
+            IPAMConfig: ipam,
         };
     }
 
@@ -1723,6 +1768,20 @@ export default class DockerManager {
         // network
         if (config.networkMode && typeof config.networkMode === 'string') {
             args.push('--network', config.networkMode);
+
+            // Aliases and static IPs are only accepted for the network the container is created in.
+            const primary = DockerManager.getPrimaryNetwork(config);
+            if (primary) {
+                for (const alias of primary.aliases || []) {
+                    args.push('--network-alias', alias);
+                }
+                if (primary.ipv4Address) {
+                    args.push('--ip', primary.ipv4Address);
+                }
+                if (primary.ipv6Address) {
+                    args.push('--ip6', primary.ipv6Address);
+                }
+            }
         }
 
         // extra hosts
@@ -1834,6 +1893,52 @@ export default class DockerManager {
             throw new Error(`Network ${name} not found after creation`);
         }
         return { ...result, networks };
+    }
+
+    /**
+     * Connect an existing container to an additional network.
+     *
+     * Docker attaches only one network at creation time, so every network beyond the primary one
+     * has to be connected separately.
+     *
+     * @param containerNameOrId container to connect
+     * @param net network name plus the optional aliases / static IPs of that endpoint
+     */
+    async networkConnect(
+        containerNameOrId: string,
+        net: NetworkAttachment,
+    ): Promise<{ stdout: string; stderr: string }> {
+        if (!net.name) {
+            return { stdout: '', stderr: 'Network name is required' };
+        }
+        if (this.#dockerode) {
+            try {
+                const network = this.#dockerode.getNetwork(net.name);
+                await network.connect({
+                    Container: containerNameOrId,
+                    EndpointConfig: DockerManager.toEndpointSettings(net),
+                });
+                return { stdout: `Container ${containerNameOrId} connected to ${net.name}`, stderr: '' };
+            } catch (e) {
+                return { stdout: '', stderr: e.message.toString() };
+            }
+        }
+
+        const args: string[] = [];
+        for (const alias of net.aliases || []) {
+            args.push('--alias', alias);
+        }
+        if (net.ipv4Address) {
+            args.push('--ip', net.ipv4Address);
+        }
+        if (net.ipv6Address) {
+            args.push('--ip6', net.ipv6Address);
+        }
+        try {
+            return await this.#exec(`network connect ${args.join(' ')} ${net.name} ${containerNameOrId}`);
+        } catch (e) {
+            return { stdout: '', stderr: e.message.toString() };
+        }
     }
 
     async networkRemove(networkId: string): Promise<{ stdout: string; stderr: string; networks?: NetworkInfo[] }> {

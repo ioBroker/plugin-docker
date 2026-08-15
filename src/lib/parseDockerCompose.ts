@@ -114,8 +114,7 @@ export interface ComposeService {
     dns_opt?: string[];
 
     networks?:
-        | Array<string | { name: string; aliases?: string[]; ipv4_address?: string; ipv6_address?: string }>
-        | StringMap;
+        Array<string | { name: string; aliases?: string[]; ipv4_address?: string; ipv6_address?: string }> | StringMap;
 
     /**
      * `host`, `none`, `bridge`, a custom network name, `container:<name|id>` or the
@@ -236,7 +235,7 @@ function normalizeStringMap(input?: StringMap | string[]): StringMap | undefined
 }
 
 function normalizeEnvironment(env?: ComposeService['environment']): ComposeService['environment'] {
-    return normalizeStringMap(env as any);
+    return normalizeStringMap(env);
 }
 
 function normalizeDependsOn(dep?: ComposeService['depends_on']): ComposeService['depends_on'] | undefined {
@@ -247,7 +246,7 @@ function normalizeDependsOn(dep?: ComposeService['depends_on']): ComposeService[
         return dep;
     }
     if (isObject(dep)) {
-        return dep as any;
+        return dep;
     }
     // string (legacy unlikely here, but normalize)
     return [String(dep)];
@@ -393,7 +392,7 @@ function normalizeBuild(b?: ComposeBuild | string): ComposeBuild | string | unde
         out.args = kv;
     }
     if (out.labels) {
-        out.labels = normalizeStringMap(out.labels as any) ?? {};
+        out.labels = normalizeStringMap(out.labels) ?? {};
     }
     if (out.extra_hosts && Array.isArray(out.extra_hosts)) {
         // keep as a list "host:ip" if provided; allowed by "compose"

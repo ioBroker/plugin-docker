@@ -64,7 +64,7 @@ function normalizeEnv(env?: ComposeService['environment']): EnvVar | undefined {
     }
     const out: EnvVar = {};
     for (const [k, v] of Object.entries(env)) {
-        out[k] = v as any;
+        out[k] = v;
     }
     return out;
 }
@@ -274,7 +274,7 @@ function mapHealthcheck(h?: ComposeService['healthcheck']): Healthcheck | undefi
         return undefined;
     }
     return {
-        test: h.test as string | string[] | ['NONE'],
+        test: h.test,
         interval: duration2ms(h.interval),
         timeout: duration2ms(h.timeout),
         retries: h.retries,
@@ -496,7 +496,7 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
             build = {
                 context: svc.build.context,
                 dockerfile: svc.build.dockerfile,
-                args: svc.build.args as EnvVar | undefined,
+                args: svc.build.args,
                 target: svc.build.target,
                 cacheFrom: svc.build.cache_from,
                 labels: normalizeLabels(svc.build.labels),

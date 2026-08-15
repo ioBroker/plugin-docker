@@ -202,6 +202,8 @@ Pick a value that covers the `stop_grace_period` of your slowest container plus 
 
 ## Changelog
 ### **WORK IN PROGRESS**
+- (@GermanBluefox) Fixed the adapter hanging on the first start: creating a container went through `dockerode.run()`, which waits for the container to exit and therefore never returned for a long-running container
+- (@GermanBluefox) Split `containerRun()` (starts detached) from the new `containerRunAndWait()` (runs a short-lived container and returns its output). Reading volume directories and files uses the latter and no longer detaches, which also fixes it on the CLI driver
 - (@GermanBluefox) Documented `iobEnabled` correctly: it is a required opt-in, a service is only managed if the label is set to `true`. Services without it are now logged on debug level instead of being skipped silently
 - (@GermanBluefox) Fixed `iobStopOnUnload`: the plugin did not implement `destroy()`, so containers were never stopped when the instance unloaded
 - (@GermanBluefox) Containers are now stopped in parallel and without the surrounding container listings, to fit into the shutdown timeout of the host

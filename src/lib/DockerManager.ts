@@ -132,6 +132,17 @@ export function parseLsLong(listing: string): LsEntry[] {
 }
 
 export default class DockerManager {
+    /**
+     * How long a short-lived helper container may run before `containerRunAndWait` gives up.
+     *
+     * Generous on purpose: on the CLI driver `docker run` pulls a missing image implicitly, and
+     * that download can take minutes on a slow connection. The timeout only exists to keep a
+     * container that never exits from blocking the caller forever, not to enforce a deadline.
+     * Creating the managed containers is not affected - `containerRun()` has no timeout, and its
+     * image is pulled beforehand.
+     */
+    static readonly RUN_AND_WAIT_TIMEOUT_MS = 300_000;
+
     protected installed: boolean = false;
     protected dockerVersion: string = '';
     protected needSudo: boolean = false;
@@ -382,12 +393,15 @@ export default class DockerManager {
         return !existingImage || existingImage.id !== newImage.id ? newImage : null;
     }
 
-    #exec(command: string): Promise<{ stdout: string; stderr: string }> {
+    #exec(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
         if (!this.installed) {
             return Promise.reject(new Error('Docker is not installed'));
         }
         const finalCommand = this.needSudo ? `sudo docker ${command}` : `docker ${command}`;
-        return execPromise(finalCommand);
+        return execPromise(finalCommand, timeoutMs ? { timeout: timeoutMs } : undefined).then(({ stdout, stderr }) => ({
+            stdout: stdout?.toString() || '',
+            stderr: stderr?.toString() || '',
+        }));
     }
 
     async #isDockerInstalled(): Promise<string | false> {
@@ -918,8 +932,45 @@ export default class DockerManager {
 
     /**
      * Create and start a container with the given configuration. No checks are done.
+     *
+     * Returns as soon as the container is running and does NOT wait for it to exit, so this is the
+     * method for long-running (daemon) containers. Use `containerRunAndWait()` when the output of a
+     * short-lived container is needed - mixing the two blocks the adapter forever, because a daemon
+     * container never exits.
      */
     async containerRun(config: ContainerConfig): Promise<{ stdout: string; stderr: string }> {
+        if (this.#dockerode) {
+            const container = await this.#dockerode.createContainer(DockerManager.getDockerodeConfig(config));
+            await container.start();
+            return { stdout: `Container ${container.id} started`, stderr: '' };
+        }
+
+        try {
+            // `toDockerRun` renders `-d`, so the CLI detaches as well
+            return await this.#exec(`run ${DockerManager.toDockerRun(config)}`);
+        } catch (e) {
+            return { stdout: '', stderr: e.message.toString() };
+        }
+    }
+
+    /**
+     * Run a short-lived container to completion and return what it wrote to stdout and stderr.
+     *
+     * This waits for the container to exit, so it must never be used for a daemon container - use
+     * `containerRun()` for those. Meant for helper containers like `alpine ls`, whose output is the
+     * whole point of starting them.
+     *
+     * @param config container configuration, `removeOnExit` is recommended
+     * @param options run options
+     * @param options.timeoutMs Give up after this many milliseconds. Without it a container that
+     * never exits would block the caller - and with it the adapter start - indefinitely.
+     */
+    async containerRunAndWait(
+        config: ContainerConfig,
+        options?: { timeoutMs?: number },
+    ): Promise<{ stdout: string; stderr: string }> {
+        const timeoutMs = options?.timeoutMs ?? DockerManager.RUN_AND_WAIT_TIMEOUT_MS;
+
         if (this.#dockerode) {
             const outStream = new PassThrough();
             const errStream = new PassThrough();
@@ -929,21 +980,76 @@ export default class DockerManager {
             errStream.on('data', chunk => (stderr += chunk.toString()));
             const dockerConfig = DockerManager.getDockerodeConfig(config);
 
-            await this.#dockerode.run(
-                config.image,
-                !config.command?.length ? [] : Array.isArray(config.command) ? config.command : [config.command],
-                [outStream, errStream],
-                { ...dockerConfig, Tty: false },
-            );
-            outStream.end();
-            errStream.end();
+            try {
+                await DockerManager.withTimeout(
+                    this.#dockerode.run(
+                        config.image,
+                        !config.command?.length
+                            ? []
+                            : Array.isArray(config.command)
+                              ? config.command
+                              : [config.command],
+                        [outStream, errStream],
+                        { ...dockerConfig, Tty: false },
+                    ),
+                    timeoutMs,
+                    `Container ${config.name || config.image} did not finish within ${timeoutMs} ms`,
+                );
+            } catch (e) {
+                // `removeOnExit` only triggers on exit, so a container that hangs would linger
+                await this.#forceRemoveContainer(config.name);
+                return { stdout: '', stderr: e.message.toString() };
+            } finally {
+                outStream.end();
+                errStream.end();
+            }
             return { stdout, stderr };
         }
 
         try {
-            return await this.#exec(`run ${DockerManager.toDockerRun(config)}`);
+            // `detach: false` suppresses the `-d`, which would put the container ID on stdout
+            // instead of the output of the command
+            return await this.#exec(`run ${DockerManager.toDockerRun({ ...config, detach: false })}`, timeoutMs);
         } catch (e) {
+            await this.#forceRemoveContainer(config.name);
             return { stdout: '', stderr: e.message.toString() };
+        }
+    }
+
+    /** Remove a container that outlived its purpose, ignoring every error */
+    async #forceRemoveContainer(name?: ContainerName | true): Promise<void> {
+        if (typeof name !== 'string') {
+            return;
+        }
+        try {
+            if (this.#dockerode) {
+                await this.#dockerode.getContainer(name).remove({ force: true });
+            } else {
+                await this.#exec(`rm -f ${name}`);
+            }
+        } catch {
+            // the container is already gone, or docker cannot be reached - nothing to do either way
+        }
+    }
+
+    /**
+     * Reject when a promise takes too long, so that a stuck container cannot block the caller
+     *
+     * @param promise promise to guard
+     * @param timeoutMs milliseconds to wait before giving up
+     * @param message error message of the rejection
+     */
+    static async withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+        let timer: NodeJS.Timeout | undefined;
+        try {
+            return await Promise.race([
+                promise,
+                new Promise<never>((_resolve, reject) => {
+                    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+                }),
+            ]);
+        } finally {
+            clearTimeout(timer);
         }
     }
 
@@ -2089,8 +2195,8 @@ export default class DockerManager {
     /** List files in a volume */
     async volumeDir(volumeName: string, path?: string): Promise<LsEntry[] | string> {
         try {
-            // Execute `docker run --rm -it -v {volumeName}:/data alpine ls -l /data/{path}
-            const result = await this.containerRun({
+            // Execute `docker run --rm -v {volumeName}:/data alpine ls -l /data/{path} and read its output
+            const result = await this.containerRunAndWait({
                 image: 'alpine',
                 name: `iobroker_temp_ls_${Date.now()}`,
                 removeOnExit: true,
@@ -2118,8 +2224,8 @@ export default class DockerManager {
     /** Read a text file from a volume */
     async volumeFile(volumeName: string, filePath: string): Promise<string | null> {
         try {
-            // Execute `docker run --rm -it -v {volumeName}:/data alpine cat /data/{filePath}
-            const result = await this.containerRun({
+            // Execute `docker run --rm -v {volumeName}:/data alpine cat /data/{filePath} and read its output
+            const result = await this.containerRunAndWait({
                 image: 'alpine',
                 name: `iobroker_temp_cat_${Date.now()}`,
                 removeOnExit: true,

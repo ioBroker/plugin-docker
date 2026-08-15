@@ -147,11 +147,18 @@ export default class DockerPlugin extends PluginBase {
                         );
                         const configs = composeToContainerConfigs(pureFileConfig);
                         for (const config of configs) {
+                            // Managing a container is an explicit opt-in: the label has to be set
+                            // for the service to be started. A missing label means "not managed" -
+                            // this is intentional, do not relax it to `!== false`.
                             if (config.iobEnabled) {
                                 this.log.debug(
                                     `Use following config for docker ${filePath}: ${JSON.stringify(config)}`,
                                 );
                                 this.#configurations.push(config);
+                            } else {
+                                this.log.debug(
+                                    `Service ${config.name} of ${filePath} is not managed, because iobEnabled is not set to true`,
+                                );
                             }
                         }
                     }
@@ -232,6 +239,30 @@ export default class DockerPlugin extends PluginBase {
 
             await this.#dockerManager.isReady();
         }
+    }
+
+    /**
+     * Stop the managed containers when the instance unloads
+     *
+     * Called by the PluginHandler of the js-controller, which awaits this method before the
+     * adapter process terminates. Containers labeled with `iobStopOnUnload` are stopped here.
+     *
+     * Note that the host kills the adapter process `common.stopTimeout` ms (1000 by default) after
+     * it requested the stop, so this must not take long - see the README on how to raise it for
+     * adapters with slowly stopping containers.
+     *
+     * @returns always true, as there is nothing left to clean up afterwards
+     */
+    async destroy(): Promise<boolean> {
+        if (this.#dockerManager) {
+            try {
+                await this.#dockerManager.destroy();
+            } catch (e) {
+                this.log.warn(`Cannot stop own containers on unload: ${e.message}`);
+            }
+            this.#dockerManager = null;
+        }
+        return true;
     }
 
     /**

@@ -1226,10 +1226,28 @@ export default class DockerManager {
      * Stop a container
      *
      * @param container Container name or ID
+     * @param options stop options
+     * @param options.skipVerification Send the stop right away instead of listing the containers
+     * before and after it. Saves two round trips and the "still running" check - meant for the
+     * adapter unload, where the process may be killed within a second. Docker accepts a name
+     * wherever it accepts an ID, so no lookup is needed.
      */
     async containerStop(
         container: ContainerName,
+        options?: { skipVerification?: boolean },
     ): Promise<{ stdout: string; stderr: string; containers?: ContainerInfo[] }> {
+        if (options?.skipVerification) {
+            if (this.#dockerode) {
+                await this.#dockerode.getContainer(container).stop();
+                return { stdout: `Container ${container} stopped`, stderr: '' };
+            }
+            try {
+                return await this.#exec(`stop ${container}`);
+            } catch (e) {
+                return { stdout: '', stderr: e.message.toString() };
+            }
+        }
+
         if (this.#dockerode) {
             let containers = await this.containerList();
             // find ID of container

@@ -125,10 +125,12 @@ volumes:
 
 Add these labels under each service to control behavior:
 
-- `iobEnabled` (default: `true`)
-  Disable management for a service by setting to `false`.
+- `iobEnabled` (**required**, no default)
+  Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label — or with `false` — is left untouched, so a Compose file can contain services that the plugin must not manage.
+  Typically wired to an adapter setting: `iobEnabled=${config.dockerInflux.enabled:-true}`.
 - `iobStopOnUnload` (default: `true`)
   If `false`, the container keeps running when the instance stops or is unloaded.
+  See [Stopping containers on unload](#stopping-containers-on-unload) if your container needs longer than a second to stop.
 - `iobBackup`
   Comma‑separated list of named volumes to include in ioBroker backups.
 - `iobAutoImageUpdate` (default: `false`)
@@ -167,9 +169,28 @@ If `iobAutoImageUpdate=true`, the plugin periodically (or on trigger) checks the
 
 Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routines. Ensure they are named volumes (not anonymous or host bind mounts) for reliable restore.
 
+## Stopping containers on unload
+
+Containers labeled with `iobStopOnUnload` are stopped when the instance is stopped or disabled. The plugin does this in its `destroy()` hook, which the js-controller awaits before the adapter process terminates.
+
+That wait is not unlimited. Once the host has requested the stop, it kills the adapter process after `common.stopTimeout` milliseconds — **1000 by default** — and the adapter itself spends 500 ms of that on its own shutdown. The plugin therefore issues all stops in parallel and skips every avoidable Docker round trip, but it does **not** shorten the grace period of the containers: that is what `stop_grace_period` is for, and cutting it short risks data loss for databases.
+
+If your containers need longer than that to shut down cleanly, raise the timeout in the `common` section of your adapter's `io-package.json`:
+
+```json
+{
+    "common": {
+        "stopTimeout": 15000
+    }
+}
+```
+
+Pick a value that covers the `stop_grace_period` of your slowest container plus a little headroom. Without it the container may still be running when the adapter process is killed.
+
 ## Best Practices
 
 - Keep Compose files minimal—only declare what you manage via the adapter.
+- Raise `common.stopTimeout` when containers need more than a second to stop—see [Stopping containers on unload](#stopping-containers-on-unload).
 - Use explicit named volumes for persistent data you want backed up.
 - Avoid hard-coding secrets; prefer environment variables injected via adapter config.
 - Test changes on a staging instance before rolling into production.
@@ -181,6 +202,9 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 
 ## Changelog
 ### **WORK IN PROGRESS**
+- (@GermanBluefox) Documented `iobEnabled` correctly: it is a required opt-in, a service is only managed if the label is set to `true`. Services without it are now logged on debug level instead of being skipped silently
+- (@GermanBluefox) Fixed `iobStopOnUnload`: the plugin did not implement `destroy()`, so containers were never stopped when the instance unloaded
+- (@GermanBluefox) Containers are now stopped in parallel and without the surrounding container listings, to fit into the shutdown timeout of the host
 - (@GermanBluefox) Applied `network_mode` from the compose file, including `container:<name>` and `service:<name>`
 - (@GermanBluefox) Fixed resolution of `networks`: entries declared in the top-level `networks` block, the `true` shorthand and option-less entries of the mapping form were dropped silently
 - (@GermanBluefox) Networks beyond the first one are now connected to the container, external networks are used verbatim

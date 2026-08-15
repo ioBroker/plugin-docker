@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+    stopper:
+        image: stopper:latest
+        container_name: stopper
+        labels:
+            - 'iobEnabled=true'
+            - 'iobStopOnUnload=true'
+
+    second-stopper:
+        image: second:latest
+        container_name: second-stopper
+        labels:
+            - 'iobEnabled=true'
+            - 'iobStopOnUnload=true'
+
+    keeper:
+        image: keeper:latest
+        container_name: keeper
+        labels:
+            - 'iobEnabled=true'
+            - 'iobStopOnUnload=false'

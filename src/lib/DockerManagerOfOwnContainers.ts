@@ -1011,15 +1011,27 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             this.#monitoringInterval = null;
         }
 
-        for (const container of this.#ownContainers) {
-            if (container.iobEnabled !== false && container.iobStopOnUnload && container.name) {
+        const toStop = this.#ownContainers.filter(
+            container => container.iobEnabled !== false && container.iobStopOnUnload && container.name,
+        );
+        if (!toStop.length) {
+            return;
+        }
+
+        // The host kills the adapter process `common.stopTimeout` ms (1000 by default) after it
+        // requested the stop, so every round trip counts: stop all containers at once and skip the
+        // container listings around each stop. The grace period itself is not shortened here - it
+        // belongs to the container (`stop_grace_period`) and cutting it short risks data loss for
+        // databases. Adapters with slowly stopping containers have to raise `common.stopTimeout`.
+        await Promise.all(
+            toStop.map(async container => {
                 this.log.info(`Stopping own container ${container.name} on destroy`);
                 try {
-                    await this.containerStop(container.name);
+                    await this.containerStop(container.name as string, { skipVerification: true });
                 } catch (e) {
                     this.log.warn(`Cannot stop own container ${container.name} on destroy: ${e.message}`);
                 }
-            }
-        }
+            }),
+        );
     }
 }

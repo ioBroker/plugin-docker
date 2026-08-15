@@ -1,0 +1,27 @@
+version: '3.9'
+
+# iobEnabled is evaluated truthy, not compared to the literal true
+services:
+    yaml-bool:
+        image: yaml-bool:latest
+        container_name: yaml-bool
+        labels:
+            iobEnabled: true
+
+    number-one:
+        image: number-one:latest
+        container_name: number-one
+        labels:
+            - 'iobEnabled=1'
+
+    yes-value:
+        image: yes-value:latest
+        container_name: yes-value
+        labels:
+            - 'iobEnabled=yes'
+
+    empty-value:
+        image: empty-value:latest
+        container_name: empty-value
+        labels:
+            - 'iobEnabled='

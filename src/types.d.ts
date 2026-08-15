@@ -485,7 +485,10 @@ export interface HostMapping {
 
 // The master container configuration you can use in your manager:
 export interface ContainerConfig {
-    /** If false, the container is not started, but still visible in the list */
+    /**
+     * Has to be set for the container to be managed, i.e. created, started and stopped.
+     * A missing value or false leaves the service untouched - there is no implicit default.
+     */
     iobEnabled?: boolean; // ioBroker setting
 
     /** If true, the container is stopped when the adapter unloads */

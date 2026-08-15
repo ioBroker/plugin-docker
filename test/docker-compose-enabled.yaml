@@ -1,0 +1,26 @@
+version: '3.9'
+
+services:
+    explicit-true:
+        image: explicit-true:latest
+        container_name: explicit-true
+        labels:
+            - 'iobEnabled=true'
+
+    # no iobEnabled label at all - must NOT be managed, the label is an explicit opt-in
+    no-label:
+        image: no-label:latest
+        container_name: no-label
+
+    # carries other iob labels, but not iobEnabled - must NOT be managed either
+    other-labels:
+        image: other-labels:latest
+        container_name: other-labels
+        labels:
+            - 'iobStopOnUnload=true'
+
+    explicit-false:
+        image: explicit-false:latest
+        container_name: explicit-false
+        labels:
+            - 'iobEnabled=false'

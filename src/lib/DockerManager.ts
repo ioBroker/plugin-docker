@@ -152,6 +152,15 @@ export default class DockerManager {
     #driver: 'socket' | 'cli' | 'http' | 'https' | 'ssh' = 'cli';
     #dockerode: Docker | null = null;
     #cliAvailable: boolean = false;
+    /**
+     * Report a missing Docker on debug level instead of warn/error.
+     *
+     * Set by a caller that creates a manager only to answer the question "is Docker there?" - the
+     * `checkDocker` control of a jsonConfig dialog does that once per rendered checkbox. Without
+     * it, every such probe writes "Docker is not installed" into the log of the adapter that
+     * answered the request, although that adapter was never asked to run a container.
+     */
+    readonly #quiet: boolean;
     protected readonly dockerApi?: {
         host?: string;
         port?: number | string;
@@ -179,11 +188,40 @@ export default class DockerManager {
         };
         logger: ioBroker.Logger;
         namespace: `${string}.${number}`;
+        /**
+         * Only find out whether Docker is available, and keep the log clean while doing it.
+         *
+         * A manager that really runs containers must leave this unset - there, a missing Docker
+         * is a problem the user has to see. See `logDockerUnavailable()`.
+         */
+        quiet?: boolean;
     }) {
         this.log = options.logger;
         this.namespace = options.namespace;
         this.dockerApi = options.dockerApi;
+        this.#quiet = !!options.quiet;
         this.#waitReady = new Promise<void>(resolve => this.init().then(() => resolve()));
+    }
+
+    /**
+     * Log that Docker cannot be used on this host.
+     *
+     * The level depends on why the manager exists. One that manages containers reports on `level`,
+     * because those containers will not start. One that was created with `quiet` only answers
+     * whether Docker is available - its caller reports the result itself (the checkbox of the
+     * config dialog stays disabled), so the same text on warn level is nothing but noise in the
+     * log of an adapter that runs no container at all. It is still written on debug level, so it
+     * stays available for troubleshooting.
+     *
+     * @param message text to log
+     * @param level level to log on when the manager is not quiet
+     */
+    protected logDockerUnavailable(message: string, level: 'warn' | 'error' = 'warn'): void {
+        if (this.#quiet) {
+            this.log.debug(message);
+        } else {
+            this.log[level](message);
+        }
     }
 
     /** Wait till the check if docker is installed and the daemon is running is ready */
@@ -212,14 +250,22 @@ export default class DockerManager {
         };
     }
 
-    static checkDockerSocket(): Promise<boolean> {
+    /**
+     * Check whether the local Docker socket accepts a connection.
+     *
+     * @param logError receives the reason if the socket cannot be reached. A failing probe is not
+     * an error - the host may talk to Docker over TCP, use the CLI, or have no Docker at all - so
+     * `init()` routes it into the debug log. Without the callback it goes to the console, as before.
+     * @returns true if the socket answered
+     */
+    static checkDockerSocket(logError?: (message: string) => void): Promise<boolean> {
         return new Promise<boolean>(resolve => {
             const socket = createConnection({ path: '/var/run/docker.sock' }, () => {
                 socket.end();
                 resolve(true);
             });
             socket.on('error', e => {
-                console.error(`Cannot connect to docker socket: ${e.message}`);
+                (logError || console.error)(`Cannot connect to docker socket: ${e.message}`);
                 resolve(false);
             });
         });
@@ -256,7 +302,7 @@ export default class DockerManager {
                 port: this.dockerApi.port,
                 protocol: this.dockerApi.protocol || 'http',
             });
-        } else if (await DockerManager.checkDockerSocket()) {
+        } else if (await DockerManager.checkDockerSocket(text => this.log.debug(text))) {
             this.#driver = 'socket';
             this.#dockerode = new Docker({ socketPath: '/var/run/docker.sock' });
         } else if (await DockerManager.isDockerApiRunningOnPort(2375)) {
@@ -289,11 +335,11 @@ export default class DockerManager {
             const daemonRunning = await this.#isDockerDaemonRunning();
             if (daemonRunning) {
                 // Docker daemon is running, but docker command not found
-                this.log.warn(
+                this.logDockerUnavailable(
                     'Docker daemon is running, but docker command not found. May be "iobroker" user has no access to Docker. Run "iob fix" command to fix it.',
                 );
             } else {
-                this.log.warn('Docker is not installed. Please install Docker.');
+                this.logDockerUnavailable('Docker is not installed. Please install Docker.');
             }
         }
         if (this.installed) {
@@ -321,7 +367,7 @@ export default class DockerManager {
             //              ├─97032 /usr/bin/docker-proxy -proto tcp -host-ip 0.0.0.0 -host-port 5000 -container-ip 172.17.0.2 -container-port 5000 -use-listen-fd
             //              └─97039 /usr/bin/docker-proxy -proto tcp -host-ip :: -host-port 5000 -container-ip 172.17.0.2 -container-port 5000 -use-listen-fd
             if (stderr?.includes('could not be found') || stderr?.includes('not-found')) {
-                this.log.error(`Docker is not installed: ${stderr}`);
+                this.logDockerUnavailable(`Docker is not installed: ${stderr}`, 'error');
                 return false;
             }
 

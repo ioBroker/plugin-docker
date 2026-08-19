@@ -187,6 +187,27 @@ If your containers need longer than that to shut down cleanly, raise the timeout
 
 Pick a value that covers the `stop_grace_period` of your slowest container plus a little headroom. Without it the container may still be running when the adapter process is killed.
 
+## Probing Docker Availability (`quiet`)
+
+`DockerManager` can also be used on its own, without the plugin mechanism, to find out whether Docker
+is usable on this host. The `checkDocker` control of a jsonConfig dialog does exactly that, through
+the admin instance that serves the dialog:
+
+```js
+const dockerManager = new DockerManager({ logger, namespace: 'admin.0', quiet: true });
+const info = await dockerManager.getDockerDaemonInfo();
+await dockerManager.destroy();
+```
+
+The constructor starts the detection right away, so on a host without Docker every created manager
+writes `Docker is not installed. Please install Docker.` into the log of the *asking* adapter - and a
+config dialog with two such checkboxes creates two of them, although that adapter was never asked to
+run a container. With `quiet: true` these messages go to the debug log instead; the result is
+returned by `getDockerDaemonInfo()` anyway, and the caller reports it in its own UI.
+
+Leave `quiet` unset for a manager that runs containers: there a missing Docker means the containers
+will not start, and the user has to see it.
+
 ## Best Practices
 
 - Keep Compose files minimal—only declare what you manage via the adapter.
@@ -201,6 +222,10 @@ Pick a value that covers the `stop_grace_period` of your slowest container plus 
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Added the `quiet` option to `DockerManager`: a manager created only to probe whether Docker is available now reports its absence on debug level instead of warn/error, so a pure availability check does not fill the log of an adapter that runs no container
+- (@GermanBluefox) The failed probe of `/var/run/docker.sock` no longer goes to the console, but into the debug log of the adapter - it is a normal outcome on a host that uses the CLI, TCP, or has no Docker
+
 ### 1.1.2 (2026-08-15)
 - (@GermanBluefox) Fixed the adapter hanging on the first start: creating a container went through `dockerode.run()`, which waits for the container to exit and therefore never returned for a long-running container
 - (@GermanBluefox) Split `containerRun()` (starts detached) from the new `containerRunAndWait()` (runs a short-lived container and returns its output). Reading volume directories and files uses the latter and no longer detaches, which also fixes it on the CLI driver

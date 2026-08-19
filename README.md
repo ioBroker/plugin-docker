@@ -222,7 +222,7 @@ will not start, and the user has to see it.
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.1.3 (2026-08-19)
 - (@GermanBluefox) Added the `quiet` option to `DockerManager`: a manager created only to probe whether Docker is available now reports its absence on debug level instead of warn/error, so a pure availability check does not fill the log of an adapter that runs no container
 - (@GermanBluefox) The failed probe of `/var/run/docker.sock` no longer goes to the console, but into the debug log of the adapter - it is a normal outcome on a host that uses the CLI, TCP, or has no Docker
 

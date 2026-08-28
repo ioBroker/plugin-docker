@@ -162,6 +162,8 @@ export type DockerContainerInspect = {
         StopSignal?: 'SIGTERM' | 'SIGKILL' | string; // e.g. "SIGTERM"
         /** --stop-timeout (seconds) */
         StopTimeout?: number;
+        /** Durations are reported in nanoseconds here, unlike the milliseconds of `Healthcheck` */
+        Healthcheck?: HealthConfig;
     };
     NetworkSettings: {
         Bridge: string;

@@ -1,6 +1,9 @@
+const { readFileSync } = require('node:fs');
 const { PluginBase } = require('@iobroker/plugin-base');
 const DockerPluginModule = require('../build/cjs/index.js');
 const DockerManagerOfOwnContainers = require('../build/cjs/lib/DockerManagerOfOwnContainers');
+const composeFromYaml = require('../build/cjs/lib/parseDockerCompose');
+const { composeToContainerConfigs } = require('../build/cjs/lib/compose2config');
 
 const DockerPlugin = DockerPluginModule.default || DockerPluginModule;
 const Manager = DockerManagerOfOwnContainers.default || DockerManagerOfOwnContainers;
@@ -117,6 +120,29 @@ describe('unload', () => {
 
             if (JSON.stringify(stopped) !== JSON.stringify(['stop-me'])) {
                 throw new Error(`Expected only "stop-me" to be stopped, got ${JSON.stringify(stopped)}`);
+            }
+        });
+
+        it('should leave a service without the label running, as the README documents', async () => {
+            // The label is an opt-in like iobEnabled - a service that does not carry it keeps
+            // running, so a container that other instances use as well is not torn down.
+            const stopped = [];
+            const configs = composeToContainerConfigs(
+                composeFromYaml.default(readFileSync(`${__dirname}/docker-compose-unload.yaml`, 'utf8')),
+            );
+            const manager = await managerWithContainers(configs.map(c => ({ ...c, name: c.name })));
+            manager.containerStop = async name => {
+                stopped.push(name);
+                return { stdout: '', stderr: '' };
+            };
+
+            await manager.destroy();
+
+            if (stopped.includes('defaulter')) {
+                throw new Error('A service without iobStopOnUnload must keep running');
+            }
+            if (JSON.stringify(stopped.sort()) !== JSON.stringify(['second-stopper', 'stopper'])) {
+                throw new Error(`Expected only the opted-in containers, got ${JSON.stringify(stopped)}`);
             }
         });
 

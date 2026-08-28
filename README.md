@@ -128,8 +128,8 @@ Add these labels under each service to control behavior:
 - `iobEnabled` (**required**, no default)
   Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label — or with `false` — is left untouched, so a Compose file can contain services that the plugin must not manage.
   Typically wired to an adapter setting: `iobEnabled=${config.dockerInflux.enabled:-true}`.
-- `iobStopOnUnload` (default: `true`)
-  If `false`, the container keeps running when the instance stops or is unloaded.
+- `iobStopOnUnload` (default: `false`)
+  Set it to `true` to stop the container when the instance stops or is unloaded. Like `iobEnabled`, this is an opt-in: without the label — or with `false` — the container keeps running, so a service that other instances use as well is not torn down behind their back.
   See [Stopping containers on unload](#stopping-containers-on-unload) if your container needs longer than a second to stop.
 - `iobBackup`
   Comma‑separated list of named volumes to include in ioBroker backups.
@@ -171,7 +171,7 @@ Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routin
 
 ## Stopping containers on unload
 
-Containers labeled with `iobStopOnUnload` are stopped when the instance is stopped or disabled. The plugin does this in its `destroy()` hook, which the js-controller awaits before the adapter process terminates.
+Containers labeled with `iobStopOnUnload=true` are stopped when the instance is stopped or disabled — and only those. The plugin does this in its `destroy()` hook, which the js-controller awaits before the adapter process terminates.
 
 That wait is not unlimited. Once the host has requested the stop, it kills the adapter process after `common.stopTimeout` milliseconds — **1000 by default** — and the adapter itself spends 500 ms of that on its own shutdown. The plugin therefore issues all stops in parallel and skips every avoidable Docker round trip, but it does **not** shorten the grace period of the containers: that is what `stop_grace_period` is for, and cutting it short risks data loss for databases.
 
@@ -222,6 +222,21 @@ will not start, and the user has to see it.
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Fixed the endless recreation of containers that use `expose`, `env_file`, a tmpfs volume or `network_mode: service:<name>`: those settings cannot be read back from `inspect`, so every check reported them as changed and recreated the container - on every adapter start, and with `iobWaitForReady` on every readiness signal
+- (@GermanBluefox) Fixed the check aborting for a container whose configuration holds a setting the running container does not have at all (a `healthcheck` or `dns` entry, a later added `stop_grace_period`): reading it off the missing object threw, so the container was neither recreated nor started nor monitored. A missing setting is now a difference like any other
+- (@GermanBluefox) `healthcheck` is now really applied - it was parsed from the compose file and then dropped, on both the API and the CLI driver
+- (@GermanBluefox) `dns`, `dns_search` and `dns_opt` are now really applied - the API driver had them commented out and the CLI driver never rendered them
+- (@GermanBluefox) `env_file` now works on the API driver as well: the files are read and merged into the environment, as compose does it, with `environment:` winning over the file. Before, only the CLI driver honoured them, so the same compose file behaved differently depending on whether the host offers a docker socket
+- (@GermanBluefox) `expose` and tmpfs volumes are now passed to docker on both drivers
+- (@GermanBluefox) Resource limits are read from the compose file: `mem_limit`, `mem_reservation`, `memswap_limit`, `cpus`, `cpu_shares`, `cpu_quota`, `cpu_period`, `cpuset` and `pids_limit`, with `deploy.resources.limits` as a fallback. Only `shm_size` was evaluated before
+- (@GermanBluefox) Fixed `cpus`: the fraction of a CPU was sent as a cpu *set*, which docker rejects. It is now sent as `NanoCpus`, and `cpuset` as `CpusetCpus`
+- (@GermanBluefox) The CLI driver no longer builds its command line as a string that a shell has to split again: docker is called with an argument list. Values containing a space - an adapter directory below `C:\Program Files`, a password with a blank, a bind mount path, a healthcheck command - arrive as one argument now, and a value can no longer be interpreted as a shell command. This affects `docker cp` of the `iobCopyVolumes` provisioning, all container, volume and network commands, and `docker run` itself
+- (@GermanBluefox) Fixed a multi-element `entrypoint` on the CLI driver: `--entrypoint` takes a single value, the remaining elements belong behind the image. They used to be joined into one value, which docker looked for as a single executable
+- (@GermanBluefox) A configuration value that contains a template pattern itself no longer loops forever and blocks the adapter start - it is reported as an error
+- (@GermanBluefox) Documented `iobStopOnUnload` correctly: like `iobEnabled` it is an opt-in and defaults to *not* stopping the container. The README claimed the opposite
+- (@GermanBluefox) Removed a leftover `console.log` that wrote past the ioBroker logger on every check of every container
+
 ### 1.1.3 (2026-08-19)
 - (@GermanBluefox) Added the `quiet` option to `DockerManager`: a manager created only to probe whether Docker is available now reports its absence on debug level instead of warn/error, so a pure availability check does not fill the log of an adapter that runs no container
 - (@GermanBluefox) The failed probe of `/var/run/docker.sock` no longer goes to the console, but into the debug log of the adapter - it is a normal outcome on a host that uses the CLI, TCP, or has no Docker

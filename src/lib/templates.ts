@@ -15,6 +15,9 @@ function getAttributeFromObject(instanceConfig: ioBroker.AdapterConfig, attribut
     return current;
 }
 
+/** Upper bound of replacements in one field, see countSubstitution() in parseField() */
+const MAX_SUBSTITUTIONS = 1000;
+
 /** This function gets the template, extracts all patterns and replaces it with values from instanceConfig */
 export function parseField(
     field: string,
@@ -22,6 +25,19 @@ export function parseField(
     additionalConfig: AdditionalConfig,
 ): any {
     let match: RegExpMatchArray | null;
+    /**
+     * A substituted value may contain a pattern itself - a password like `a${config.pass}b` is
+     * enough - and the loops below would then replace it again, forever, blocking the whole
+     * adapter start. The limit is far above any sane template and only breaks that circle.
+     */
+    let substitutions = 0;
+    const countSubstitution = (): void => {
+        if (++substitutions > MAX_SUBSTITUTIONS) {
+            throw new Error(
+                `Cannot resolve the template "${field}": more than ${MAX_SUBSTITUTIONS} substitutions. Does a configuration value contain a template pattern itself?`,
+            );
+        }
+    };
     // We support 3 types of patterns:
     // - {{config.path.to.value}} and
     // - ${config.path.to.value:-defaultValue} (like in JS template strings). important the name must start with "config."
@@ -33,6 +49,7 @@ export function parseField(
         if (!match) {
             break;
         }
+        countSubstitution();
         if (match[1].startsWith('config.')) {
             const pattern = match[1]?.replace(/^config[._]/, ''); // remove "config." or "config_"
             if (!pattern) {
@@ -68,6 +85,7 @@ export function parseField(
         if (!match) {
             break;
         }
+        countSubstitution();
         let pattern = match[1];
         const defaultValue = match[3];
         if (pattern.includes('_') && !pattern.includes('.')) {
@@ -109,6 +127,7 @@ export function parseField(
         if (!match) {
             break;
         }
+        countSubstitution();
         const defaultValue = match[3];
         const value = additionalConfig[match[1] as keyof AdditionalConfig];
         if (value !== undefined) {

@@ -2,8 +2,9 @@
 // it periodically monitors the docker daemon status.
 // It manages containers defined in common.plugins.docker and could monitor other containers
 
-import { join } from 'path';
-import type { ContainerConfig, ContainerStats, ContainerStatus, DockerContainerInspect } from '../types';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'path';
+import type { ContainerConfig, ContainerStats, ContainerStatus, DockerContainerInspect, Healthcheck } from '../types';
 import DockerManager from './DockerManager';
 
 const dockerDefaults: Record<string, any> = {
@@ -24,6 +25,41 @@ const dockerDefaults: Record<string, any> = {
 
 function isDefault(value: any, def: any): boolean {
     return JSON.stringify(value) === JSON.stringify(def);
+}
+
+/**
+ * Parse the `KEY=value` lines of an env file the way compose does.
+ *
+ * Empty lines and comments are skipped, a line without `=` is ignored, and one pair of surrounding
+ * quotes is removed from the value. An optional `export ` prefix is tolerated.
+ *
+ * @param content content of the env file
+ * @returns the variables of the file
+ */
+export function parseEnvFile(content: string): Record<string, string> {
+    const result: Record<string, string> = {};
+
+    for (const rawLine of content.split('\n')) {
+        const line = rawLine.trim().replace(/^export\s+/, '');
+        if (!line || line.startsWith('#')) {
+            continue;
+        }
+        const index = line.indexOf('=');
+        if (index < 1) {
+            continue;
+        }
+        const key = line.slice(0, index).trim();
+        let value = line.slice(index + 1).trim();
+        if (
+            value.length > 1 &&
+            ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+        ) {
+            value = value.slice(1, -1);
+        }
+        result[key] = value;
+    }
+
+    return result;
 }
 
 function deepCompare(object1: any, object2: any): boolean {
@@ -71,8 +107,29 @@ function deepCompare(object1: any, object2: any): boolean {
  * difference must not force a recreate. Docker also reports generated aliases and the effective
  * IPs there, which would never match the compose file and would recreate the container endlessly.
  * The network the container was *created* in is still compared, via `networkMode`.
+ *
+ * The remaining ones cannot be read back from `inspect` in the form they were written, so every
+ * check would report them as changed and recreate the container forever:
+ * - `expose` lands in the same `ExposedPorts` map as the published ports and as the `EXPOSE` of
+ *   the image itself, so it cannot be told apart afterwards.
+ * - `tmpfs` comes back as an option string (`size=64m,mode=1777`), not as the parsed numbers.
+ * - `envFile` is resolved into the environment before the container is created - the file itself
+ *   never reaches docker, and a change of its *content* is caught through `environment`.
+ * - `networkContainer` is only the bare target of `networkMode: container:<name>`, which is
+ *   compared on its own.
+ * - `build` is not part of a running container at all.
  */
-const ignoredOnCompare = ['hostname', 'dependsOn', 'devices', 'networks'];
+const ignoredOnCompare = [
+    'hostname',
+    'dependsOn',
+    'devices',
+    'networks',
+    'expose',
+    'tmpfs',
+    'envFile',
+    'networkContainer',
+    'build',
+];
 
 function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): string[] {
     const diffs: string[] = [];
@@ -156,6 +213,11 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
                         }
                     }
                 }
+            } else if ((existing as any)[key] === undefined || (existing as any)[key] === null) {
+                // The running container has nothing where the configuration wants an object - that
+                // is a difference, not a reason to throw. Reading a sub key off `undefined` used to
+                // abort the whole check of this container, so it was neither started nor monitored.
+                diffs.push(key);
             } else {
                 Object.keys(desired[key]).forEach((subKey: string) => {
                     if (!deepCompare((desired as any)[key][subKey], (existing as any)[key][subKey])) {
@@ -363,6 +425,32 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
     }
 
     /**
+     * Read a healthcheck back from `inspect`.
+     *
+     * Docker reports the durations in nanoseconds, the configuration keeps milliseconds. A
+     * container without a healthcheck reports none - and one that was explicitly disabled reports
+     * `['NONE']`, which is a healthcheck like any other and has to survive the round trip, or the
+     * comparison would recreate the container over and over.
+     *
+     * @param health healthcheck as reported by docker
+     * @returns the healthcheck in the internal representation, or undefined if there is none
+     */
+    static #mapInspectHealthcheck(health?: DockerContainerInspect['Config']['Healthcheck']): Healthcheck | undefined {
+        if (!health?.Test?.length) {
+            return undefined;
+        }
+        const ns2ms = (ns?: number): number | undefined => (ns ? ns / 1_000_000 : undefined);
+
+        return {
+            test: [...health.Test] as Healthcheck['test'],
+            interval: ns2ms(health.Interval),
+            timeout: ns2ms(health.Timeout),
+            retries: health.Retries || undefined,
+            startPeriod: ns2ms(health.StartPeriod),
+        };
+    }
+
+    /**
      * Convert information from `inspect` to docker configuration to start it
      *
      * @param inspect Inspect information
@@ -431,7 +519,10 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 policy: inspect.HostConfig.RestartPolicy.Name as any,
                 maxRetries: inspect.HostConfig.RestartPolicy.MaximumRetryCount,
             },
+            healthcheck: DockerManagerOfOwnContainers.#mapInspectHealthcheck(inspect.Config.Healthcheck),
             resources: {
+                // NanoCpus is the counterpart of `--cpus`: 1 CPU = 1e9
+                cpus: inspect.HostConfig.NanoCpus ? inspect.HostConfig.NanoCpus / 1e9 : undefined,
                 cpuShares: inspect.HostConfig.CpuShares,
                 cpuQuota: inspect.HostConfig.CpuQuota,
                 cpuPeriod: inspect.HostConfig.CpuPeriod,
@@ -498,7 +589,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         const inspect = await this.containerInspect(container.name);
         if (inspect) {
             const existingConfig = DockerManagerOfOwnContainers.mapInspectToConfig(inspect);
-            console.log(`Compare existing config and desired config for ${container.name}`);
+            this.log.debug(`Compare existing config and desired config for ${container.name}`);
             container = cleanContainerConfig(container);
             const diffs = compareConfigs(await this.#resolveNetworkContainerReference(container), existingConfig);
             if (diffs.length) {
@@ -600,6 +691,40 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                 this.log.info(`Connected own container ${container.name} to network ${network.name}`);
             }
         }
+    }
+
+    /**
+     * Merge the variables of `env_file` into the environment of the container.
+     *
+     * Docker itself does not know `env_file` - compose reads the files and hands the result over as
+     * plain environment variables. Only the CLI driver has an `--env-file` flag, so on every host
+     * that talks to the docker socket (the normal case) the variables silently disappeared.
+     *
+     * Entries of `environment:` win over the file, as in compose. The paths are resolved against
+     * the adapter directory, like the compose files themselves. Afterwards `envFile` is dropped:
+     * the file has served its purpose, and what reaches docker is the environment.
+     *
+     * @param container container configuration, modified in place
+     */
+    #resolveEnvFiles(container: ContainerConfig): void {
+        if (!container.envFile?.length) {
+            return;
+        }
+
+        const fromFiles: Record<string, string> = {};
+        for (const file of container.envFile) {
+            const fullPath = isAbsolute(file) ? file : join(this.#adapterDir, file);
+            try {
+                Object.assign(fromFiles, parseEnvFile(readFileSync(fullPath, 'utf8')));
+            } catch (e) {
+                this.log.warn(`Cannot read env_file ${fullPath} of container ${container.name}: ${e.message}`);
+            }
+        }
+
+        if (Object.keys(fromFiles).length) {
+            container.environment = { ...fromFiles, ...(container.environment || {}) };
+        }
+        delete container.envFile;
     }
 
     getDefaultContainerName(): string {
@@ -721,6 +846,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                     container.labels = { ...container.labels, iobroker: this.namespace };
                 }
                 container.name = this.#modifyContainerName(container.name);
+                this.#resolveEnvFiles(container);
 
                 try {
                     // create iobroker networks if necessary

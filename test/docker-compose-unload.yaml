@@ -21,3 +21,10 @@ services:
         labels:
             - 'iobEnabled=true'
             - 'iobStopOnUnload=false'
+
+    # No iobStopOnUnload at all: like iobEnabled, stopping on unload is an explicit opt-in
+    defaulter:
+        image: defaulter:latest
+        container_name: defaulter
+        labels:
+            - 'iobEnabled=true'

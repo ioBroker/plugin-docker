@@ -144,6 +144,20 @@ export interface ComposeService {
     shm_size?: string | number;
     sysctls?: StringMap;
 
+    /**
+     * Resource limits of the non-swarm form. Compose also accepts them below
+     * `deploy.resources.limits`, which is used as a fallback when these are missing.
+     */
+    mem_limit?: string | number;
+    mem_reservation?: string | number;
+    memswap_limit?: string | number;
+    cpus?: number | string;
+    cpu_shares?: number;
+    cpu_quota?: number;
+    cpu_period?: number;
+    cpuset?: string;
+    pids_limit?: number;
+
     deploy?: ComposeDeploy;
 
     x_extra?: Record<string, any>;
@@ -547,6 +561,22 @@ export default function composeFromYaml(input: string | Record<string, any>): Co
         }
         if (svcRaw.sysctls) {
             s.sysctls = { ...svcRaw.sysctls };
+        }
+
+        for (const key of [
+            'mem_limit',
+            'mem_reservation',
+            'memswap_limit',
+            'cpus',
+            'cpu_shares',
+            'cpu_quota',
+            'cpu_period',
+            'cpuset',
+            'pids_limit',
+        ] as const) {
+            if (svcRaw[key] != null) {
+                (s as any)[key] = svcRaw[key];
+            }
         }
 
         if (svcRaw.deploy) {

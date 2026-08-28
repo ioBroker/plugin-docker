@@ -27,7 +27,8 @@ function parseSizeToBytes(size: string | number | undefined): number | undefined
     if (typeof size === 'number') {
         return size;
     }
-    const match = size.match(/^(\d+(?:\.\d+)?)\s*([kmgtKMGT])?[bB]?$/);
+    // A leading minus is allowed on purpose: compose uses `memswap_limit: -1` for "unlimited"
+    const match = size.match(/^(-?\d+(?:\.\d+)?)\s*([kmgtKMGT])?[bB]?$/);
     if (!match) {
         return undefined;
     }
@@ -44,6 +45,40 @@ function parseSizeToBytes(size: string | number | undefined): number | undefined
         default:
             return Math.round(value);
     }
+}
+
+/**
+ * Resource limits of a service.
+ *
+ * Compose knows two places for them: the flat `mem_limit`, `cpus`, ... of the non-swarm form and
+ * the `deploy.resources` block, which `docker compose up` honours as well. The flat form wins,
+ * the deploy block fills the gaps.
+ *
+ * `cpus` is a *fraction of a CPU* (`1.5`), while `cpuset` pins the container to concrete cores
+ * (`"0-2,4"`). They are different settings and must not be mapped onto each other.
+ */
+function mapResources(svc: ComposeService): ContainerConfig['resources'] {
+    const limits = svc.deploy?.resources?.limits;
+    const reservations = svc.deploy?.resources?.reservations;
+
+    const rawCpus = svc.cpus ?? limits?.cpus;
+    const cpus = rawCpus === undefined ? undefined : Number(rawCpus);
+
+    const res: NonNullable<ContainerConfig['resources']> = {
+        // an unparsable value would otherwise reach docker as NaN
+        cpus: cpus !== undefined && isFinite(cpus) ? cpus : undefined,
+        cpuShares: svc.cpu_shares,
+        cpuQuota: svc.cpu_quota,
+        cpuPeriod: svc.cpu_period,
+        cpusetCpus: svc.cpuset,
+        memory: parseSizeToBytes(svc.mem_limit ?? limits?.memory),
+        memorySwap: parseSizeToBytes(svc.memswap_limit),
+        memoryReservation: parseSizeToBytes(svc.mem_reservation ?? reservations?.memory),
+        pidsLimit: svc.pids_limit ?? limits?.pids,
+        shmSize: parseSizeToBytes(svc.shm_size),
+    };
+
+    return Object.values(res).some(v => v !== undefined) ? res : undefined;
 }
 
 function normalizeEnv(env?: ComposeService['environment']): EnvVar | undefined {
@@ -622,8 +657,7 @@ export function composeServiceToContainerConfig(serviceName: string | undefined,
 
         readOnly: svc.read_only,
 
-        resources:
-            parseSizeToBytes(svc.shm_size) !== undefined ? { shmSize: parseSizeToBytes(svc.shm_size) } : undefined,
+        resources: mapResources(svc),
 
         build,
     };

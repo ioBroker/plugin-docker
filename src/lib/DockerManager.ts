@@ -3,7 +3,7 @@
 // It manages containers defined in common.plugins.docker and could monitor other containers
 
 import { promisify } from 'node:util';
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import type {
     ContainerConfig,
     ContainerInfo,
@@ -20,6 +20,7 @@ import type {
     VolumeInfo,
     VolumeDriver,
     LsEntry,
+    Healthcheck,
 } from '../types';
 import { createConnection } from 'node:net';
 import { PassThrough } from 'node:stream';
@@ -29,6 +30,25 @@ import type { PackOptions, Pack } from 'tar-fs';
 import type { ConnectConfig } from 'ssh2';
 
 const execPromise = promisify(exec);
+const execFilePromise = promisify(execFile);
+
+/**
+ * Quote a single argument for display in a shell command line.
+ *
+ * Only used to *render* a command line - for logging, and for the string form of `toDockerRun()`.
+ * What the manager actually executes is an argument list that never touches a shell, see `#exec`.
+ *
+ * @param value raw argument value
+ * @returns the value, quoted if it contains anything a shell would interpret
+ */
+export function quoteArg(value: string): string {
+    if (!/[\s"'$`\\&|;<>()*?!#~]/.test(value)) {
+        return value;
+    }
+    return process.platform === 'win32'
+        ? `"${value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`
+        : `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 function size2string(size: number): string {
     if (size < 1024) {
@@ -383,9 +403,13 @@ export default class DockerManager {
 
     async containerGetRamAndCpuUsage(containerNameOrId: ContainerName): Promise<ContainerStats | null> {
         try {
-            const { stdout } = await this.#exec(
-                `stats ${containerNameOrId} --no-stream --format "{{.CPUPerc}};{{.MemUsage}};{{.NetIO}};{{.BlockIO}};{{.PIDs}}"`,
-            );
+            const { stdout } = await this.#exec([
+                'stats',
+                containerNameOrId,
+                '--no-stream',
+                '--format',
+                '{{.CPUPerc}};{{.MemUsage}};{{.NetIO}};{{.BlockIO}};{{.PIDs}}',
+            ]);
             // Example: "0.15%;12.34MiB / 512MiB;1.2kB / 2.3kB;0B / 0B;5"
             const [cpuStr, memStr, netStr, blockIoStr, pid] = stdout.trim().split(';');
             const [memUsed, memMax] = memStr.split('/').map(it => it.trim());
@@ -439,12 +463,32 @@ export default class DockerManager {
         return !existingImage || existingImage.id !== newImage.id ? newImage : null;
     }
 
-    #exec(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
+    /**
+     * Run a docker command on the CLI driver.
+     *
+     * The arguments are handed to docker as a list, **without a shell in between**. Values from the
+     * compose file are part of almost every command - a container name, an environment value, a
+     * bind mount path - and joining those into a single command line broke every value that
+     * contained a space (an adapter directory below `C:\\Program Files`, a password with a blank),
+     * while a value carrying a shell metacharacter would have been run as a command of its own.
+     *
+     * There is deliberately no string form: it would bring that problem back the moment someone
+     * interpolates a name into it. Use `toDockerRun()` when a *displayable* command line is needed.
+     *
+     * @param args arguments of the docker command, one entry per argument
+     * @param timeoutMs kill the command after this many milliseconds
+     * @returns stdout and stderr of the command
+     */
+    #exec(args: string[], timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
         if (!this.installed) {
             return Promise.reject(new Error('Docker is not installed'));
         }
-        const finalCommand = this.needSudo ? `sudo docker ${command}` : `docker ${command}`;
-        return execPromise(finalCommand, timeoutMs ? { timeout: timeoutMs } : undefined).then(({ stdout, stderr }) => ({
+
+        return execFilePromise(
+            this.needSudo ? 'sudo' : 'docker',
+            this.needSudo ? ['docker', ...args] : args,
+            timeoutMs ? { timeout: timeoutMs } : undefined,
+        ).then(({ stdout, stderr }) => ({
             stdout: stdout?.toString() || '',
             stderr: stderr?.toString() || '',
         }));
@@ -556,7 +600,7 @@ export default class DockerManager {
 
             return result;
         }
-        const { stdout } = await this.#exec(`system df`);
+        const { stdout } = await this.#exec(['system', 'df']);
         const result: DiskUsage = { total: { size: 0, reclaimable: 0 } };
         // parse the output
         // TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
@@ -689,7 +733,7 @@ export default class DockerManager {
             });
         }
         try {
-            const result = await this.#exec(`pull ${image}`);
+            const result = await this.#exec(['pull', image]);
             const images = await this.imageList();
             if (!images.find(it => `${it.repository}:${it.tag}` === image)) {
                 throw new Error(`Image ${image} not found after pull`);
@@ -711,9 +755,14 @@ export default class DockerManager {
     > {
         try {
             // Read stars and descriptions
-            const { stdout } = await this.#exec(
-                `search ${partialName} --format "{{.Name}};{{.Description}};{{.IsOfficial}};{{.StarCount}}" --limit 50`,
-            );
+            const { stdout } = await this.#exec([
+                'search',
+                partialName,
+                '--format',
+                '{{.Name}};{{.Description}};{{.IsOfficial}};{{.StarCount}}',
+                '--limit',
+                '50',
+            ]);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
@@ -730,6 +779,73 @@ export default class DockerManager {
             this.log.debug(`Cannot search images: ${e.message}`);
             return [];
         }
+    }
+
+    /**
+     * Translate a healthcheck into the form the Docker API expects.
+     *
+     * The API wants the durations in nanoseconds, while the configuration holds milliseconds, and
+     * it wants `Test` as a list whose first entry says how to run it. Compose allows a bare string
+     * for the shell form, so that is wrapped here.
+     *
+     * @param healthcheck healthcheck of the container configuration
+     * @returns the API representation, or undefined if the container has no healthcheck
+     */
+    static toDockerHealthcheck(healthcheck?: Healthcheck): Docker.HealthConfig | undefined {
+        if (!healthcheck?.test) {
+            return undefined;
+        }
+        const raw = healthcheck.test;
+        let test: string[];
+        if (typeof raw === 'string') {
+            test = ['CMD-SHELL', raw];
+        } else if (['CMD', 'CMD-SHELL', 'NONE'].includes(raw[0])) {
+            test = [...raw];
+        } else {
+            // compose requires one of the keywords, but a bare argument list is a common mistake
+            test = ['CMD', ...raw];
+        }
+
+        const ms2ns = (ms?: number): number | undefined => (ms === undefined ? undefined : ms * 1_000_000);
+
+        return {
+            Test: test,
+            Interval: ms2ns(healthcheck.interval),
+            Timeout: ms2ns(healthcheck.timeout),
+            Retries: healthcheck.retries,
+            StartPeriod: ms2ns(healthcheck.startPeriod),
+        };
+    }
+
+    /**
+     * Translate tmpfs targets into the `{ target: options }` map of the Docker API.
+     *
+     * @param tmpfs tmpfs entries of the container configuration
+     * @returns the API representation, or undefined if there are none
+     */
+    static toDockerTmpfs(tmpfs?: ContainerConfig['tmpfs']): { [target: string]: string } | undefined {
+        if (!tmpfs?.length) {
+            return undefined;
+        }
+        const result: { [target: string]: string } = {};
+        for (const entry of tmpfs) {
+            if (typeof entry === 'string') {
+                result[entry] = '';
+                continue;
+            }
+            if (!entry.target) {
+                continue;
+            }
+            const options: string[] = [];
+            if (entry.size !== undefined) {
+                options.push(`size=${entry.size}`);
+            }
+            if (entry.mode !== undefined) {
+                options.push(`mode=${entry.mode}`);
+            }
+            result[entry.target] = options.join(',');
+        }
+        return Object.keys(result).length ? result : undefined;
     }
 
     static getDockerodeConfig(config: ContainerConfig): Docker.ContainerCreateOptions {
@@ -835,6 +951,16 @@ export default class DockerManager {
         // static IPs of the remaining networks are applied when they are connected afterwards.
         const primary = DockerManager.getPrimaryNetwork(config);
 
+        // `expose` publishes nothing, it only declares the port - so it is merged into the same
+        // map as the published ports, which docker expects to hold both.
+        const exposedPorts: { [key: string]: object } = {};
+        for (const port of config.ports || []) {
+            exposedPorts[`${port.containerPort}/${port.protocol || 'tcp'}`] = {};
+        }
+        for (const port of config.expose || []) {
+            exposedPorts[String(port).includes('/') ? String(port) : `${port}/tcp`] = {};
+        }
+
         return {
             name: config.name,
             Image: config.image,
@@ -853,15 +979,8 @@ export default class DockerManager {
             // WorkingDir: config.workingDir,
             // { '/data': {} }
             Labels: config.labels,
-            ExposedPorts: config.ports
-                ? config.ports.reduce(
-                      (acc, port) => {
-                          acc[`${port.containerPort}/${port.protocol || 'tcp'}`] = {};
-                          return acc;
-                      },
-                      {} as { [key: string]: object },
-                  )
-                : undefined,
+            ExposedPorts: Object.keys(exposedPorts).length ? exposedPorts : undefined,
+            Healthcheck: DockerManager.toDockerHealthcheck(config.healthcheck),
             HostConfig: {
                 // https://github.com/apocas/dockerode/issues/265#issuecomment-462786936
                 Binds: config.volumes,
@@ -885,12 +1004,13 @@ export default class DockerManager {
                       )
                     : undefined,
                 Mounts: mounts,
+                Tmpfs: DockerManager.toDockerTmpfs(config.tmpfs),
                 NetworkMode:
                     config.networkMode === true || config.networkMode === 'true' ? '' : config.networkMode || undefined,
                 // Links: config.links,
-                // Dns: config.dns,
-                // DnsOptions: config.dnsOptions,
-                // DnsSearch: config.dnsSearch,
+                Dns: config.dns?.servers,
+                DnsOptions: config.dns?.options,
+                DnsSearch: config.dns?.search,
                 ExtraHosts: config.extraHosts,
                 // VolumesFrom: config.volumesFrom,
                 Privileged: config.security?.privileged,
@@ -908,10 +1028,15 @@ export default class DockerManager {
                 CpuShares: config.resources?.cpuShares,
                 CpuPeriod: config.resources?.cpuPeriod,
                 CpuQuota: config.resources?.cpuQuota,
-                CpusetCpus: config.resources?.cpus?.toString(),
+                // `cpus` is a fraction of a CPU and belongs into NanoCpus (1 CPU = 1e9), while
+                // CpusetCpus pins the container to concrete cores. Passing the fraction as a cpu
+                // set made docker reject every container that used `cpus:`.
+                NanoCpus: config.resources?.cpus ? Math.round(config.resources.cpus * 1e9) : undefined,
+                CpusetCpus: config.resources?.cpusetCpus,
                 Memory: config.resources?.memory,
                 MemorySwap: config.resources?.memorySwap,
                 MemoryReservation: config.resources?.memoryReservation,
+                PidsLimit: config.resources?.pidsLimit,
                 ShmSize: config.resources?.shmSize,
                 // OomKillDisable: config.resources?.oomKillDisable,
                 // OomScoreAdj: config.resources?.oomScoreAdj,
@@ -992,8 +1117,8 @@ export default class DockerManager {
         }
 
         try {
-            // `toDockerRun` renders `-d`, so the CLI detaches as well
-            return await this.#exec(`run ${DockerManager.toDockerRun(config)}`);
+            // `toDockerRunArgs` renders `-d`, so the CLI detaches as well
+            return await this.#exec(['run', ...DockerManager.toDockerRunArgs(config)]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1055,7 +1180,7 @@ export default class DockerManager {
         try {
             // `detach: false` suppresses the `-d`, which would put the container ID on stdout
             // instead of the output of the command
-            return await this.#exec(`run ${DockerManager.toDockerRun({ ...config, detach: false })}`, timeoutMs);
+            return await this.#exec(['run', ...DockerManager.toDockerRunArgs({ ...config, detach: false })], timeoutMs);
         } catch (e) {
             await this.#forceRemoveContainer(config.name);
             return { stdout: '', stderr: e.message.toString() };
@@ -1071,7 +1196,7 @@ export default class DockerManager {
             if (this.#dockerode) {
                 await this.#dockerode.getContainer(name).remove({ force: true });
             } else {
-                await this.#exec(`rm -f ${name}`);
+                await this.#exec(['rm', '-f', name]);
             }
         } catch {
             // the container is already gone, or docker cannot be reached - nothing to do either way
@@ -1108,7 +1233,7 @@ export default class DockerManager {
             return { stdout: `Container ${container.id} created`, stderr: '' };
         }
         try {
-            return await this.#exec(`create ${DockerManager.toDockerRun(config, true)}`);
+            return await this.#exec(['create', ...DockerManager.toDockerRunArgs(config, true)]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1160,7 +1285,7 @@ export default class DockerManager {
             const containerInfo = containers.find(it => it.names === config.name);
             if (containerInfo) {
                 if (containerInfo.status === 'running' || containerInfo.status === 'restarting') {
-                    const stopResult = await this.#exec(`stop ${containerInfo.id}`);
+                    const stopResult = await this.#exec(['stop', containerInfo.id]);
                     containers = await this.containerList();
 
                     if (containers.find(it => it.id === containerInfo.id && it.status === 'running')) {
@@ -1169,7 +1294,7 @@ export default class DockerManager {
                     }
                 }
                 // Remove container
-                const rmResult = await this.#exec(`rm ${containerInfo.id}`);
+                const rmResult = await this.#exec(['rm', containerInfo.id]);
 
                 containers = await this.containerList();
                 if (containers.find(it => it.id === containerInfo.id)) {
@@ -1177,7 +1302,7 @@ export default class DockerManager {
                     throw new Error(`Container ${containerInfo.id} still found after remove`);
                 }
             }
-            return await this.#exec(`create ${DockerManager.toDockerRun(config, true)}`);
+            return await this.#exec(['create', ...DockerManager.toDockerRunArgs(config, true)]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1185,7 +1310,7 @@ export default class DockerManager {
 
     async containerCreateCompose(compose: string): Promise<{ stdout: string; stderr: string }> {
         try {
-            return await this.#exec(`compose -f ${compose} create`);
+            return await this.#exec(['compose', '-f', compose, 'create']);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1208,9 +1333,11 @@ export default class DockerManager {
             });
         }
         try {
-            const { stdout } = await this.#exec(
-                'images --format "{{.Repository}}:{{.Tag}};{{.ID}};{{.CreatedAt}};{{.Size}}"',
-            );
+            const { stdout } = await this.#exec([
+                'images',
+                '--format',
+                '{{.Repository}}:{{.Tag}};{{.ID}};{{.CreatedAt}};{{.Size}}',
+            ]);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
@@ -1266,7 +1393,7 @@ export default class DockerManager {
             }
         }
         try {
-            return await this.#exec(`build -t ${tag} -f ${dockerfilePath} .`);
+            return await this.#exec(['build', '-t', tag, '-f', dockerfilePath, '.']);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1275,7 +1402,7 @@ export default class DockerManager {
     /** Tag an image with a new tag */
     async imageTag(imageId: ImageName, newTag: string): Promise<{ stdout: string; stderr: string }> {
         try {
-            return await this.#exec(`tag ${imageId} ${newTag}`);
+            return await this.#exec(['tag', imageId, newTag]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1284,7 +1411,7 @@ export default class DockerManager {
     /** Remove an image */
     async imageRemove(imageId: ImageName): Promise<{ stdout: string; stderr: string; images?: ImageInfo[] }> {
         try {
-            const result = await this.#exec(`rmi ${imageId}`);
+            const result = await this.#exec(['rmi', imageId]);
             const images = await this.imageList();
             if (images.find(it => `${it.repository}:${it.tag}` === imageId)) {
                 return { stdout: '', stderr: `Image ${imageId} still found after deletion`, images };
@@ -1333,7 +1460,7 @@ export default class DockerManager {
         }
 
         try {
-            const { stdout } = await this.#exec(`inspect ${imageId}`);
+            const { stdout } = await this.#exec(['inspect', imageId]);
             return JSON.parse(stdout)[0];
         } catch (e) {
             this.log.debug(`Cannot inspect image: ${e.message.toString()}`);
@@ -1351,7 +1478,7 @@ export default class DockerManager {
             }
         }
         try {
-            return await this.#exec(`image prune -f`);
+            return await this.#exec(['image', 'prune', '-f']);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1394,7 +1521,7 @@ export default class DockerManager {
                 return { stdout: `Container ${container} stopped`, stderr: '' };
             }
             try {
-                return await this.#exec(`stop ${container}`);
+                return await this.#exec(['stop', container]);
             } catch (e) {
                 return { stdout: '', stderr: e.message.toString() };
             }
@@ -1424,7 +1551,7 @@ export default class DockerManager {
                 throw new Error(`Container ${container} not found`);
             }
 
-            const result = await this.#exec(`stop ${containerInfo.id}`);
+            const result = await this.#exec(['stop', containerInfo.id]);
             containers = await this.containerList();
             if (containers.find(it => it.id === containerInfo.id && it.status === 'running')) {
                 throw new Error(`Container ${container} still running after stop`);
@@ -1470,7 +1597,7 @@ export default class DockerManager {
                 throw new Error(`Container ${container} not found`);
             }
 
-            const result = await this.#exec(`start ${containerInfo.id}`);
+            const result = await this.#exec(['start', containerInfo.id]);
             containers = await this.containerList();
             if (
                 containers.find(
@@ -1518,7 +1645,7 @@ export default class DockerManager {
                 throw new Error(`Container ${container} not found`);
             }
 
-            return await this.#exec(`restart -t ${timeoutSeconds || 5} ${containerInfo.id}`);
+            return await this.#exec(['restart', '-t', String(timeoutSeconds || 5), containerInfo.id]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1574,13 +1701,13 @@ export default class DockerManager {
             // ensure that the container is stopped
             if (containerInfo.status === 'running' || containerInfo.status === 'restarting') {
                 // stop container
-                const result = await this.#exec(`stop ${containerInfo.id}`);
+                const result = await this.#exec(['stop', containerInfo.id]);
                 if (result.stderr) {
                     throw new Error(`Cannot stop container ${container}: ${result.stderr}`);
                 }
             }
 
-            const result = await this.#exec(`rm ${container}`);
+            const result = await this.#exec(['rm', container]);
 
             containers = await this.containerList();
             if (containers.find(it => it.id === containerInfo.id)) {
@@ -1651,9 +1778,12 @@ export default class DockerManager {
         }
 
         try {
-            const { stdout } = await this.#exec(
-                `ps ${all ? '-a' : ''} --format  "{{.Names}};{{.Status}};{{.ID}};{{.Image}};{{.Command}};{{.CreatedAt}};{{.Ports}};{{.Labels}}"`,
-            );
+            const { stdout } = await this.#exec([
+                'ps',
+                ...(all ? ['-a'] : []),
+                '--format',
+                '{{.Names}};{{.Status}};{{.ID}};{{.Image}};{{.Command}};{{.CreatedAt}};{{.Ports}};{{.Labels}}',
+            ]);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
@@ -1725,15 +1855,15 @@ export default class DockerManager {
         }
 
         try {
-            const args = [];
+            const args: string[] = [];
             if (options.tail !== undefined) {
-                args.push(`--tail ${options.tail}`);
+                args.push('--tail', String(options.tail));
             }
             if (options.follow) {
-                args.push(`--follow`);
+                args.push('--follow');
                 throw new Error('Follow option is not implemented yet');
             }
-            const result = await this.#exec(`logs${args.length ? ` ${args.join(' ')}` : ''} ${containerNameOrId}`);
+            const result = await this.#exec(['logs', ...args, containerNameOrId]);
             return (result.stdout || result.stderr).split('\n').filter(line => line.trim() !== '');
         } catch (e) {
             return e
@@ -1767,7 +1897,7 @@ export default class DockerManager {
             }
         }
         try {
-            const { stdout } = await this.#exec(`inspect ${containerNameOrId}`);
+            const { stdout } = await this.#exec(['inspect', containerNameOrId]);
             const result = JSON.parse(stdout)[0] as DockerContainerInspect;
             if (result.State.Running) {
                 result.Stats = (await this.containerGetRamAndCpuUsage(containerNameOrId)) || undefined;
@@ -1789,7 +1919,7 @@ export default class DockerManager {
             }
         }
         try {
-            return await this.#exec(`container prune -f`);
+            return await this.#exec(['container', 'prune', '-f']);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -1798,7 +1928,32 @@ export default class DockerManager {
     /**
      * Build a docker run command string from ContainerConfig
      */
+    /**
+     * Render the command line of `docker run` as a string.
+     *
+     * Every argument is quoted for a shell. This is the form for logs and for callers that want to
+     * show the command - the manager itself executes the argument list of `toDockerRunArgs()`,
+     * which needs no quoting at all.
+     *
+     * @param config container configuration
+     * @param create build the arguments for `docker create` instead of `docker run`
+     * @returns the quoted command line, without the leading `docker run`
+     */
     static toDockerRun(config: ContainerConfig, create?: boolean): string {
+        return DockerManager.toDockerRunArgs(config, create).map(quoteArg).join(' ');
+    }
+
+    /**
+     * Build the arguments of `docker run` (or `docker create`) as a list.
+     *
+     * One entry per argument, unquoted and unescaped: the list is passed to docker as it is, so a
+     * value may contain spaces, quotes or anything else without further treatment.
+     *
+     * @param config container configuration
+     * @param create build the arguments for `docker create` instead of `docker run`
+     * @returns the arguments, without the leading `docker run`
+     */
+    static toDockerRunArgs(config: ContainerConfig, create?: boolean): string[] {
         const args: string[] = [];
 
         // detach / interactive
@@ -1854,6 +2009,9 @@ export default class DockerManager {
         if (config.publishAllPorts) {
             args.push('-P');
         }
+        for (const port of config.expose || []) {
+            args.push('--expose', String(port));
+        }
         if (config.ports) {
             for (const p of config.ports) {
                 if (!p.containerPort) {
@@ -1884,6 +2042,12 @@ export default class DockerManager {
                     mount += `,readonly`;
                 }
                 args.push('--mount', mount);
+            }
+        }
+        const tmpfs = DockerManager.toDockerTmpfs(config.tmpfs);
+        if (tmpfs) {
+            for (const [target, options] of Object.entries(tmpfs)) {
+                args.push('--tmpfs', options ? `${target}:${options}` : target);
             }
         }
 
@@ -1954,6 +2118,41 @@ export default class DockerManager {
             }
         }
 
+        // dns
+        for (const server of config.dns?.servers || []) {
+            args.push('--dns', server);
+        }
+        for (const search of config.dns?.search || []) {
+            args.push('--dns-search', search);
+        }
+        for (const option of config.dns?.options || []) {
+            args.push('--dns-option', option);
+        }
+
+        // healthcheck
+        const health = DockerManager.toDockerHealthcheck(config.healthcheck);
+        if (health?.Test?.length) {
+            if (health.Test[0] === 'NONE') {
+                args.push('--no-healthcheck');
+            } else {
+                // `--health-cmd` takes one string, which docker runs through a shell - so both
+                // CMD and CMD-SHELL end up as a single argument here.
+                args.push('--health-cmd', health.Test.slice(1).join(' '));
+                if (health.Interval) {
+                    args.push('--health-interval', `${health.Interval / 1_000_000}ms`);
+                }
+                if (health.Timeout) {
+                    args.push('--health-timeout', `${health.Timeout / 1_000_000}ms`);
+                }
+                if (health.StartPeriod) {
+                    args.push('--health-start-period', `${health.StartPeriod / 1_000_000}ms`);
+                }
+                if (health.Retries !== undefined) {
+                    args.push('--health-retries', String(health.Retries));
+                }
+            }
+        }
+
         // extra hosts
         if (config.extraHosts) {
             for (const host of config.extraHosts as any[]) {
@@ -1984,8 +2183,23 @@ export default class DockerManager {
         if (config.resources?.cpus) {
             args.push('--cpus', String(config.resources.cpus));
         }
+        if (config.resources?.cpusetCpus) {
+            args.push('--cpuset-cpus', config.resources.cpusetCpus);
+        }
+        if (config.resources?.cpuShares) {
+            args.push('--cpu-shares', String(config.resources.cpuShares));
+        }
         if (config.resources?.memory) {
             args.push('--memory', String(config.resources.memory));
+        }
+        if (config.resources?.memorySwap !== undefined) {
+            args.push('--memory-swap', String(config.resources.memorySwap));
+        }
+        if (config.resources?.memoryReservation) {
+            args.push('--memory-reservation', String(config.resources.memoryReservation));
+        }
+        if (config.resources?.pidsLimit !== undefined) {
+            args.push('--pids-limit', String(config.resources.pidsLimit));
         }
         if (config.resources?.shmSize) {
             args.push('--shm-size', String(config.resources.shmSize));
@@ -1997,6 +2211,16 @@ export default class DockerManager {
         }
         args.push(config.image);
 
+        // `--entrypoint` takes exactly one value - everything after the image is appended to it.
+        // A multi-element entrypoint therefore splits up, instead of being joined into one value
+        // that docker would look for as a single executable.
+        const entrypoint = config.entrypoint
+            ? Array.isArray(config.entrypoint)
+                ? config.entrypoint
+                : [config.entrypoint]
+            : [];
+        args.push(...entrypoint.slice(1));
+
         // command override
         if (config.command) {
             if (Array.isArray(config.command)) {
@@ -2006,16 +2230,11 @@ export default class DockerManager {
             }
         }
 
-        // entrypoint override
-        if (config.entrypoint) {
-            if (Array.isArray(config.entrypoint)) {
-                args.unshift('--entrypoint', config.entrypoint.join(' '));
-            } else {
-                args.unshift('--entrypoint', config.entrypoint);
-            }
+        if (entrypoint.length) {
+            args.unshift('--entrypoint', entrypoint[0]);
         }
 
-        return args.join(' ');
+        return args;
     }
 
     async networkList(): Promise<NetworkInfo[]> {
@@ -2030,7 +2249,12 @@ export default class DockerManager {
         }
         // docker network ls
         try {
-            const { stdout } = await this.#exec(`network ls --format "{{.Name}};{{.ID}};{{.Driver}};{{.Scope}}"`);
+            const { stdout } = await this.#exec([
+                'network',
+                'ls',
+                '--format',
+                '{{.Name}};{{.ID}};{{.Driver}};{{.Scope}}',
+            ]);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
@@ -2057,7 +2281,7 @@ export default class DockerManager {
             return { stdout: `Network ${net.id} created`, stderr: '', networks };
         }
 
-        const result = await this.#exec(`network create ${driver ? `--driver ${driver}` : ''} ${name}`);
+        const result = await this.#exec(['network', 'create', ...(driver ? ['--driver', driver] : []), name]);
         const networks = await this.networkList();
         if (!networks.find(it => it.name === name)) {
             throw new Error(`Network ${name} not found after creation`);
@@ -2105,7 +2329,7 @@ export default class DockerManager {
             args.push('--ip6', net.ipv6Address);
         }
         try {
-            return await this.#exec(`network connect ${args.join(' ')} ${net.name} ${containerNameOrId}`);
+            return await this.#exec(['network', 'connect', ...args, net.name || '', containerNameOrId]);
         } catch (e) {
             return { stdout: '', stderr: e.message.toString() };
         }
@@ -2121,7 +2345,7 @@ export default class DockerManager {
             }
             return { stdout: `Network ${networkId} removed`, stderr: '', networks };
         }
-        const result = await this.#exec(`network remove ${networkId}`);
+        const result = await this.#exec(['network', 'remove', networkId]);
         const networks = await this.networkList();
         if (networks.find(it => it.id === networkId)) {
             throw new Error(`Network ${networkId} still found after deletion`);
@@ -2135,7 +2359,7 @@ export default class DockerManager {
             const networks = await this.networkList();
             return { stdout: `Networks pruned`, stderr: JSON.stringify(result), networks };
         }
-        const result = await this.#exec(`network prune -f`);
+        const result = await this.#exec(['network', 'prune', '-f']);
         const networks = await this.networkList();
         return { ...result, networks };
     }
@@ -2152,7 +2376,7 @@ export default class DockerManager {
         }
         // docker network ls
         try {
-            const { stdout } = await this.#exec(`volume ls --format "{{.Name}};{{.Driver}};{{.Mountpoint}}"`);
+            const { stdout } = await this.#exec(['volume', 'ls', '--format', '{{.Name}};{{.Driver}};{{.Mountpoint}}']);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
@@ -2220,21 +2444,29 @@ export default class DockerManager {
         }
 
         // create a temporary container with volume mounted
-        const createResult = await this.#exec(
-            `create --rm -v ${volumeName}:/data --name ${tempContainerName} alpine sleep 60`,
-        );
+        const createResult = await this.#exec([
+            'create',
+            '--rm',
+            '-v',
+            `${volumeName}:/data`,
+            '--name',
+            tempContainerName,
+            'alpine',
+            'sleep',
+            '60',
+        ]);
         if (createResult.stderr) {
             return { stdout: '', stderr: `Cannot create temporary container: ${createResult.stderr}` };
         }
         try {
-            const copyResult = await this.#exec(`cp ${sourcePath} ${tempContainerName}:/data/`);
+            const copyResult = await this.#exec(['cp', sourcePath, `${tempContainerName}:/data/`]);
             if (copyResult.stderr) {
                 return { stdout: '', stderr: `Cannot copy data to volume: ${copyResult.stderr}` };
             }
             return { stdout: 'Data copied to volume', stderr: '' };
         } finally {
             // remove temporary container
-            await this.#exec(`rm -f ${tempContainerName}`);
+            await this.#exec(['rm', '-f', tempContainerName]);
         }
     }
 
@@ -2320,11 +2552,20 @@ export default class DockerManager {
         let result: { stdout: string; stderr: string };
         if (driver === 'local' || !driver) {
             if (volume) {
-                result = await this.#exec(
-                    `volume create local --opt type=none --opt device=${volume} --opt o=bind ${name}`,
-                );
+                result = await this.#exec([
+                    'volume',
+                    'create',
+                    'local',
+                    '--opt',
+                    'type=none',
+                    '--opt',
+                    `device=${volume}`,
+                    '--opt',
+                    'o=bind',
+                    name,
+                ]);
             } else {
-                result = await this.#exec(`volume create ${name}`);
+                result = await this.#exec(['volume', 'create', name]);
             }
         } else {
             throw new Error('not implemented');
@@ -2348,7 +2589,7 @@ export default class DockerManager {
             }
             return { stdout: `Volume ${volumeName} removed`, stderr: '', volumes };
         }
-        const result = await this.#exec(`volume remove ${volumeName}`);
+        const result = await this.#exec(['volume', 'remove', volumeName]);
         const volumes = await this.volumeList();
         if (volumes.find(it => it.name === volumeName)) {
             throw new Error(`Volume ${volumeName} still found after deletion`);
@@ -2363,7 +2604,7 @@ export default class DockerManager {
             const volumes = await this.volumeList();
             return { stdout: `Volumes pruned`, stderr: JSON.stringify(result), volumes };
         }
-        const result = await this.#exec(`volume prune -f`);
+        const result = await this.#exec(['volume', 'prune', '-f']);
         const volumes = await this.volumeList();
         return { ...result, volumes };
     }

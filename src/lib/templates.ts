@@ -109,7 +109,10 @@ export function parseField(
                 if (defaultValue === 'false') {
                     return false;
                 }
-                if (!isNaN(Number(defaultValue))) {
+                // An empty default stays an empty string. `Number('')` is 0, so `${config.x:-}`
+                // used to hand a literal 0 to the container where the compose file asked for
+                // "nothing at all" - a URL, a plugin list or a password became "0".
+                if (defaultValue.trim() !== '' && !isNaN(Number(defaultValue))) {
                     return Number(defaultValue);
                 }
                 return defaultValue;
@@ -146,7 +149,10 @@ export function parseField(
                 if (defaultValue === 'false') {
                     return false;
                 }
-                if (!isNaN(Number(defaultValue))) {
+                // An empty default stays an empty string. `Number('')` is 0, so `${config.x:-}`
+                // used to hand a literal 0 to the container where the compose file asked for
+                // "nothing at all" - a URL, a plugin list or a password became "0".
+                if (defaultValue.trim() !== '' && !isNaN(Number(defaultValue))) {
                     return Number(defaultValue);
                 }
                 return defaultValue;

@@ -223,6 +223,7 @@ will not start, and the user has to see it.
 
 ## Changelog
 ### **WORK IN PROGRESS**
+- (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`
 - (@GermanBluefox) `devices` is now really passed to the container. It was parsed from the compose file and then dropped by both drivers, and it was excluded from the comparison, which hid the gap. A service that needs a device - a Coral TPU, a video device, a serial adapter - only got it when it also ran `privileged`, where docker hands over the whole `/dev` of the host anyway. Container path and cgroup permissions are filled in the way docker does (`rwm`), on both sides of the comparison, so a device no longer forces a recreate on every check but a *changed* device does
 
 ### 1.2.0 (2026-08-28)

@@ -25,6 +25,24 @@ describe('templates', () => {
                 throw new Error('The default value was not used');
             }
         });
+
+        it('should keep an empty default an empty string, not the number zero', () => {
+            // `Number('')` is 0, so an empty default used to reach the container as a literal 0 -
+            // a server URL or a plugin list that asked for "nothing" became "0"
+            const result = parseField('${config.missing:-}', config, { instance: 0 });
+            if (result !== '') {
+                throw new Error(`Expected an empty string, got ${JSON.stringify(result)}`);
+            }
+        });
+
+        it('should still turn a numeric default into a number', () => {
+            if (parseField('${config.missing:-8086}', config, { instance: 0 }) !== 8086) {
+                throw new Error('A numeric default must stay a number');
+            }
+            if (parseField('${config.missing:-true}', config, { instance: 0 }) !== true) {
+                throw new Error('A boolean default must stay a boolean');
+            }
+        });
     });
 
     describe('self-referential values', () => {

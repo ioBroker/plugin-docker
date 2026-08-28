@@ -36,6 +36,12 @@ const UNCHANGED_CASES = {
 `,
     'a cpu limit': `        cpus: 1.5
 `,
+    'a device': `        devices:
+            - /dev/bus/usb:/dev/bus/usb
+`,
+    'a device without a container path': `        devices:
+            - /dev/video0
+`,
 };
 
 describe('reconcile', () => {
@@ -126,6 +132,17 @@ services:
             });
             if (!events.includes('RECREATE')) {
                 throw new Error('A changed healthcheck must recreate the container');
+            }
+        });
+
+        it('should be recreated when a device was added to the configuration', async () => {
+            const { events } = await reconcile(SERVICE + UNCHANGED_CASES['a device'], {
+                mutate: inspect => {
+                    inspect.HostConfig.Devices = null;
+                },
+            });
+            if (!events.includes('RECREATE')) {
+                throw new Error('A device that the running container does not have must recreate it');
             }
         });
 

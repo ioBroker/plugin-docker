@@ -90,7 +90,7 @@ function deepCompare(object1: any, object2: any): boolean {
     for (const key of keys1) {
         // ignore iob* properties as they belong to ioBroker configuration
         // ignore the hostname and dependsOn as it is only for docker-compose
-        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn' || key === 'devices') {
+        if (key.startsWith('iob') || key === 'hostname' || key === 'dependsOn') {
             continue;
         }
         if (!deepCompare(object1[key], object2[key])) {
@@ -122,7 +122,6 @@ function deepCompare(object1: any, object2: any): boolean {
 const ignoredOnCompare = [
     'hostname',
     'dependsOn',
-    'devices',
     'networks',
     'expose',
     'tmpfs',
@@ -375,6 +374,16 @@ function cleanContainerConfig(obj: ContainerConfig, mayChange?: boolean): Contai
                 delete obj.volumes;
             }
         }
+        if (name === 'devices') {
+            if (!obj.devices?.length) {
+                delete obj.devices;
+                return;
+            }
+            // A compose file may name only the host path, docker reports the effective container
+            // path and cgroup permissions. Both sides are filled in the same way, so the
+            // comparison does not see a difference that only exists in the notation.
+            obj.devices = obj.devices.map(device => DockerManager.normalizeDevice(device));
+        }
         if (name === 'command') {
             if (!obj.command) {
                 delete obj.command;
@@ -500,6 +509,13 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             })),
             volumes: inspect.Config.Volumes ? Object.keys(inspect.Config.Volumes) : inspect.HostConfig.Binds,
             extraHosts: inspect.HostConfig.ExtraHosts ?? undefined,
+            devices: inspect.HostConfig.Devices?.length
+                ? inspect.HostConfig.Devices.map(device => ({
+                      hostPath: device.PathOnHost,
+                      containerPath: device.PathInContainer,
+                      permissions: device.CgroupPermissions,
+                  }))
+                : undefined,
             dns: {
                 servers: inspect.HostConfig.Dns,
                 search: inspect.HostConfig.DnsSearch,

@@ -139,6 +139,60 @@ describe('configMapping', () => {
         });
     });
 
+    describe('devices', () => {
+        const yaml =
+            SERVICE +
+            `        devices:
+            - /dev/bus/usb:/dev/bus/usb
+            - /dev/video0
+            - /dev/dri/renderD128:/dev/dri/renderD128:r
+`;
+
+        it('should reach the API driver', () => {
+            const { api } = bothDrivers(yaml);
+            const devices = api.HostConfig.Devices;
+            if (!devices?.length) {
+                throw new Error('Devices are missing in the API payload');
+            }
+            // a device without a container path keeps the host path, permissions default to rwm
+            if (
+                JSON.stringify(devices[1]) !==
+                JSON.stringify({
+                    PathOnHost: '/dev/video0',
+                    PathInContainer: '/dev/video0',
+                    CgroupPermissions: 'rwm',
+                })
+            ) {
+                throw new Error(`Unexpected device: ${JSON.stringify(devices[1])}`);
+            }
+            if (devices[2].CgroupPermissions !== 'r') {
+                throw new Error(`Explicit permissions must be kept: ${JSON.stringify(devices[2])}`);
+            }
+        });
+
+        it('should reach the CLI driver', () => {
+            const { cli } = bothDrivers(yaml);
+            for (const expected of [
+                '--device /dev/bus/usb:/dev/bus/usb:rwm',
+                '--device /dev/video0:/dev/video0:rwm',
+                '--device /dev/dri/renderD128:/dev/dri/renderD128:r',
+            ]) {
+                if (!cli.includes(expected)) {
+                    throw new Error(`"${expected}" is missing in: ${cli}`);
+                }
+            }
+        });
+
+        it('should take part in the recreate decision, unlike before', () => {
+            // The key used to be excluded from the comparison, which was only necessary because
+            // the devices never reached docker and could therefore never be read back.
+            const { config } = bothDrivers(yaml);
+            if (!config.devices?.length) {
+                throw new Error('The compose devices were not parsed');
+            }
+        });
+    });
+
     describe('expose', () => {
         const yaml =
             SERVICE +

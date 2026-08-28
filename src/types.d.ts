@@ -102,7 +102,7 @@ export type DockerContainerInspect = {
         CpuRealtimeRuntime: number;
         CpusetCpus: string;
         CpusetMems: string;
-        Devices: any[];
+        Devices: null | Array<{ PathOnHost: string; PathInContainer: string; CgroupPermissions: string }>;
         DeviceCgroupRules: null | string[];
         DeviceRequests: null | any[];
         MemoryReservation: number;

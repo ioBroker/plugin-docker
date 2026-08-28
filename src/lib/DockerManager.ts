@@ -21,6 +21,7 @@ import type {
     VolumeDriver,
     LsEntry,
     Healthcheck,
+    DeviceMapping,
 } from '../types';
 import { createConnection } from 'node:net';
 import { PassThrough } from 'node:stream';
@@ -823,6 +824,30 @@ export default class DockerManager {
      * @param tmpfs tmpfs entries of the container configuration
      * @returns the API representation, or undefined if there are none
      */
+    /**
+     * The cgroup permissions docker itself applies when a device is passed without them.
+     *
+     * Written out here because both directions need it: what is sent to docker, and what is read
+     * back from `inspect` - docker always reports the effective value, so a configuration that
+     * leaves it open has to be filled in the same way, or the comparison would see a difference
+     * that does not exist.
+     */
+    static readonly DEFAULT_DEVICE_PERMISSIONS = 'rwm';
+
+    /**
+     * Fill in what docker fills in for a device that names only the host path.
+     *
+     * @param device device mapping of the container configuration
+     * @returns the mapping with container path and permissions resolved
+     */
+    static normalizeDevice(device: DeviceMapping): Required<DeviceMapping> {
+        return {
+            hostPath: device.hostPath,
+            containerPath: device.containerPath || device.hostPath,
+            permissions: device.permissions || DockerManager.DEFAULT_DEVICE_PERMISSIONS,
+        };
+    }
+
     static toDockerTmpfs(tmpfs?: ContainerConfig['tmpfs']): { [target: string]: string } | undefined {
         if (!tmpfs?.length) {
             return undefined;
@@ -1005,6 +1030,16 @@ export default class DockerManager {
                     : undefined,
                 Mounts: mounts,
                 Tmpfs: DockerManager.toDockerTmpfs(config.tmpfs),
+                Devices: config.devices?.length
+                    ? config.devices.map(device => {
+                          const { hostPath, containerPath, permissions } = DockerManager.normalizeDevice(device);
+                          return {
+                              PathOnHost: hostPath,
+                              PathInContainer: containerPath,
+                              CgroupPermissions: permissions,
+                          };
+                      })
+                    : undefined,
                 NetworkMode:
                     config.networkMode === true || config.networkMode === 'true' ? '' : config.networkMode || undefined,
                 // Links: config.links,
@@ -2116,6 +2151,12 @@ export default class DockerManager {
                     args.push('--ip6', primary.ipv6Address);
                 }
             }
+        }
+
+        // devices
+        for (const device of config.devices || []) {
+            const { hostPath, containerPath, permissions } = DockerManager.normalizeDevice(device);
+            args.push('--device', `${hostPath}:${containerPath}:${permissions}`);
         }
 
         // dns

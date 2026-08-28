@@ -24,13 +24,17 @@ const Manager = ManagerModule.default || ManagerModule;
 function inspectFor(cfg) {
     const name = typeof cfg.name === 'string' ? cfg.name : 'unnamed';
     const network = typeof cfg.networkMode === 'string' ? cfg.networkMode : 'bridge';
+    // docker echoes what the container was created with, so ask the payload builder rather than
+    // hardcoding empty values - a fake that answers `null` where docker answers the real setting
+    // reports differences that do not exist
+    const payload = DockerManager.getDockerodeConfig(cfg);
 
     return {
         Name: `/${name}`,
         Config: {
             Image: cfg.image,
-            Cmd: null,
-            Entrypoint: null,
+            Cmd: payload.Cmd ?? null,
+            Entrypoint: payload.Entrypoint ?? null,
             User: '',
             WorkingDir: '',
             Hostname: 'containerid',
@@ -46,7 +50,7 @@ function inspectFor(cfg) {
             StopSignal: cfg.stop?.signal || null,
             StopTimeout: cfg.stop?.gracePeriodSec ?? null,
             // docker echoes the healthcheck it was created with, in nanoseconds
-            Healthcheck: DockerManager.getDockerodeConfig(cfg).Healthcheck,
+            Healthcheck: payload.Healthcheck,
         },
         HostConfig: {
             PublishAllPorts: false,
@@ -85,6 +89,7 @@ function inspectFor(cfg) {
             GroupAdd: null,
             Sysctls: cfg.sysctls || null,
             Init: null,
+            Devices: payload.HostConfig.Devices ?? null,
         },
         Mounts: (cfg.mounts || []).map(m => ({
             Type: m.type,

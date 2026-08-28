@@ -222,7 +222,7 @@ will not start, and the user has to see it.
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.2.0 (2026-08-28)
 - (@GermanBluefox) Fixed the endless recreation of containers that use `expose`, `env_file`, a tmpfs volume or `network_mode: service:<name>`: those settings cannot be read back from `inspect`, so every check reported them as changed and recreated the container - on every adapter start, and with `iobWaitForReady` on every readiness signal
 - (@GermanBluefox) Fixed the check aborting for a container whose configuration holds a setting the running container does not have at all (a `healthcheck` or `dns` entry, a later added `stop_grace_period`): reading it off the missing object threw, so the container was neither recreated nor started nor monitored. A missing setting is now a difference like any other
 - (@GermanBluefox) `healthcheck` is now really applied - it was parsed from the compose file and then dropped, on both the API and the CLI driver

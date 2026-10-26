@@ -4,7 +4,14 @@
 
 import { readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'path';
-import type { ContainerConfig, ContainerStats, ContainerStatus, DockerContainerInspect, Healthcheck } from '../types';
+import type {
+    ContainerConfig,
+    ContainerInfo,
+    ContainerStats,
+    ContainerStatus,
+    DockerContainerInspect,
+    Healthcheck,
+} from '../types';
 import DockerManager from './DockerManager';
 
 const dockerDefaults: Record<string, any> = {
@@ -423,6 +430,8 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
             logger: ioBroker.Logger;
             namespace: `${string}.${number}`;
             forceRestart?: boolean;
+            /** Report a missing Docker on debug level, see `DockerManager` */
+            quiet?: boolean;
         },
         containers?: ContainerConfig[],
     ) {
@@ -842,12 +851,57 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         return toEnsure;
     }
 
+    /**
+     * Stop the container of a service that is disabled with `iobEnabled=false`.
+     *
+     * An adapter that offers alternative services - e.g. one image for the CPU and one for a GPU,
+     * both on the same port - enables exactly one of them via its settings. The container of the
+     * service that was enabled before would otherwise keep running and block the port of the new one.
+     *
+     * Only a container that this instance created is stopped (label `iobroker=<namespace>`), and it is
+     * not removed: enabling the service again starts the same container.
+     *
+     * @param container configuration of the disabled service
+     * @param status the container list read before
+     */
+    async #stopDisabledContainer(container: ContainerConfig, status: ContainerInfo[]): Promise<void> {
+        container.name = this.#modifyContainerName(container.name);
+        const containerInfo = status.find(it => it.names === container.name);
+        if (
+            !containerInfo ||
+            (containerInfo.status !== 'running' &&
+                containerInfo.status !== 'restarting' &&
+                containerInfo.status !== 'paused')
+        ) {
+            return;
+        }
+        if (containerInfo.labels?.iobroker !== this.namespace) {
+            this.log.debug(`Container ${container.name} was not created by ${this.namespace}, it keeps running`);
+            return;
+        }
+        this.log.info(`Stopping own container ${container.name}, because its service is disabled`);
+        try {
+            const result = await this.containerStop(container.name);
+            if (result.stderr) {
+                this.log.warn(`Cannot stop own container ${container.name}: ${result.stderr}`);
+            }
+        } catch (e) {
+            this.log.warn(`Cannot stop own container ${container.name}: ${e.message}`);
+        }
+    }
+
     async #checkOwnContainers(): Promise<void> {
         if (!this.#ownContainers.length) {
             this.#waitAllCheckedResolve?.();
             return;
         }
         const status = await this.containerList(true);
+        // Stop the disabled ones first, as an alternative service may need their port
+        for (const container of this.#ownContainers) {
+            if (container.iobEnabled === false) {
+                await this.#stopDisabledContainer(container, status);
+            }
+        }
         let images = await this.imageList();
         let anyStartedOrRunning = false;
         const networkChecked: string[] = [];

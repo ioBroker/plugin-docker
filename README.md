@@ -126,8 +126,9 @@ volumes:
 Add these labels under each service to control behavior:
 
 - `iobEnabled` (**required**, no default)
-  Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label — or with `false` — is left untouched, so a Compose file can contain services that the plugin must not manage.
+  Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label is left untouched, so a Compose file can contain services that the plugin must not manage.
   Typically wired to an adapter setting: `iobEnabled=${config.dockerInflux.enabled:-true}`.
+  With `false` the service is switched off: if its container still runs, the plugin stops it — but only a container that this instance created (label `iobroker=<adapter>.<instance>`), and it does not remove it, so enabling the service again starts the same container. This lets an adapter offer alternative services on the same port, e.g. one image for the CPU and one for a GPU, or Docker as one option next to an external server: the container of the previous choice no longer blocks the port. Disabled containers are stopped before the enabled ones are started. Without any enabled service the plugin probes Docker quietly, as a host without Docker is fine then.
 - `iobStopOnUnload` (default: `false`)
   Set it to `true` to stop the container when the instance stops or is unloaded. Like `iobEnabled`, this is an opt-in: without the label — or with `false` — the container keeps running, so a service that other instances use as well is not torn down behind their back.
   See [Stopping containers on unload](#stopping-containers-on-unload) if your container needs longer than a second to stop.
@@ -222,6 +223,9 @@ will not start, and the user has to see it.
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
+
 ### 1.2.1 (2026-08-28)
 - (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`
 - (@GermanBluefox) `devices` is now really passed to the container. It was parsed from the compose file and then dropped by both drivers, and it was excluded from the comparison, which hid the gap. A service that needs a device - a Coral TPU, a video device, a serial adapter - only got it when it also ran `privileged`, where docker hands over the whole `/dev` of the host anyway. Container path and cgroup permissions are filled in the way docker does (`rwm`), on both sides of the comparison, so a device no longer forces a recreate on every check but a *changed* device does

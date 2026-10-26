@@ -56,6 +56,8 @@ export {
 export default class DockerPlugin extends PluginBase {
     #dockerManager: DockerManagerOfOwnContainers | null = null;
     #configurations: ContainerConfig[] = [];
+    /** Services switched off with `iobEnabled=false`: their containers are stopped if they still run */
+    #disabledConfigurations: ContainerConfig[] = [];
     #iobDockerApi:
         | {
               host: string;
@@ -155,6 +157,14 @@ export default class DockerPlugin extends PluginBase {
                                     `Use following config for docker ${filePath}: ${JSON.stringify(config)}`,
                                 );
                                 this.#configurations.push(config);
+                            } else if (config.iobEnabled === false) {
+                                // An explicit `false` switches off a service that may have run before,
+                                // e.g. the CPU variant of an image after the user selected the GPU variant
+                                // that publishes the same port. Its container must not keep running.
+                                this.log.debug(
+                                    `Service ${config.name} of ${filePath} is disabled, its container will be stopped if it runs`,
+                                );
+                                this.#disabledConfigurations.push(config);
                             } else {
                                 this.log.debug(
                                     `Service ${config.name} of ${filePath} is not managed, because iobEnabled is not set to true`,
@@ -168,7 +178,7 @@ export default class DockerPlugin extends PluginBase {
             }
         }
 
-        if (!this.#configurations.length) {
+        if (!this.#configurations.length && !this.#disabledConfigurations.length) {
             this.log.debug('No Docker containers to manage');
             return;
         }
@@ -212,32 +222,57 @@ export default class DockerPlugin extends PluginBase {
             this.#iobDockerApi = pluginConfig.iobDockerApi;
         }
 
-        if (!this.#configurations.find(conf => conf.iobWaitForReady)) {
+        if (!this.#configurations.length) {
+            await this.#stopDisabledContainers();
+        } else if (!this.#configurations.find(conf => conf.iobWaitForReady)) {
             await this.#startDockerManager();
         }
+    }
+
+    #managerOptions(): ConstructorParameters<typeof DockerManagerOfOwnContainers>[0] {
+        return {
+            dockerApi: this.#iobDockerApi,
+            logger: {
+                level: 'silly',
+                silly: this.log.silly.bind(this.log),
+                debug: this.log.debug.bind(this.log),
+                info: this.log.info.bind(this.log),
+                warn: this.log.warn.bind(this.log),
+                error: this.log.error.bind(this.log),
+            },
+            adapterDir: this.settings.adapterDir,
+            namespace: this.parentNamespace.replace('system.adapter.', '') as `${string}.${number}`,
+        };
     }
 
     async #startDockerManager(forceRestartOfExistingContainer?: boolean): Promise<void> {
         if (this.#configurations.find(conf => conf.iobEnabled !== false)) {
             this.#dockerManager ||= new DockerManagerOfOwnContainers(
-                {
-                    dockerApi: this.#iobDockerApi,
-                    logger: {
-                        level: 'silly',
-                        silly: this.log.silly.bind(this.log),
-                        debug: this.log.debug.bind(this.log),
-                        info: this.log.info.bind(this.log),
-                        warn: this.log.warn.bind(this.log),
-                        error: this.log.error.bind(this.log),
-                    },
-                    adapterDir: this.settings.adapterDir,
-                    namespace: this.parentNamespace.replace('system.adapter.', '') as `${string}.${number}`,
-                    forceRestart: forceRestartOfExistingContainer,
-                },
-                this.#configurations,
+                { ...this.#managerOptions(), forceRestart: forceRestartOfExistingContainer },
+                // The manager stops the containers of the disabled services before it starts the others
+                [...this.#configurations, ...this.#disabledConfigurations],
             );
 
             await this.#dockerManager.isReady();
+        }
+    }
+
+    /**
+     * Stop the containers of disabled services when the instance runs no container at all.
+     *
+     * This happens when an adapter offers Docker as one option among others and the user selected
+     * another one. The manager only lives for this check, so `getDockerManager()` stays null. It is
+     * quiet, because a host without Docker is fine for an instance that does not use it.
+     */
+    async #stopDisabledContainers(): Promise<void> {
+        const manager = new DockerManagerOfOwnContainers(
+            { ...this.#managerOptions(), quiet: true },
+            this.#disabledConfigurations,
+        );
+        try {
+            await manager.isReady();
+        } finally {
+            await manager.destroy();
         }
     }
 

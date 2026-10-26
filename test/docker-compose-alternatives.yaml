@@ -1,0 +1,21 @@
+version: '3.9'
+
+# Two variants of the same server on the same port: the adapter settings enable exactly one of them
+services:
+    cpu:
+        image: cpu:latest
+        labels:
+            - 'iobEnabled=${config.cpu:-false}'
+        ports:
+            - '11434:11434'
+
+    gpu:
+        image: gpu:latest
+        labels:
+            - 'iobEnabled=${config.gpu:-false}'
+        ports:
+            - '11434:11434'
+
+    # no iobEnabled label at all - the plugin must keep its hands off, even if such a container runs
+    foreign:
+        image: foreign:latest

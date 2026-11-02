@@ -242,7 +242,7 @@ configured Docker API. A daemon that does not answer within 5 seconds counts as 
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.3.0 (2026-11-02)
 - (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
 - (@GermanBluefox) Creating a volume through the Docker API reported `Volume undefined created`: dockerode answers with a volume handle, whose name is `name`, not `Name`. The volume itself was created correctly
 - (@GermanBluefox) Templates in the plugin config are now applied. They were resolved and the result thrown away, so `"iobDockerApi": "${config.dockerApi}"` - documented in this README - looked up a connection named `${config.dockerApi}` and fell back to the Docker of the host. The same holds for templates in `iobDockerComposeFiles` and in the fields of a connection object

@@ -244,7 +244,7 @@ starting behind its socket. A daemon that does not answer by then counts as not 
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.3.1 (2026-11-02)
 - (@GermanBluefox) A Docker daemon that accepts the connection but never answers no longer blocks the start of the manager forever - and with it the containers of the adapter and the `checkDocker` control, which waited for that start. The version probe, the probe of the ports 2375/2376 and `docker ps` now give up after 2 minutes; the open request is closed. The limit is generous on purpose: at boot, systemd accepts the connection on `docker.socket` before dockerd runs, and a slow start must not count as "no Docker"
 
 ### 1.3.0 (2026-11-02)

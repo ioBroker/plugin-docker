@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Development Commands
 
 ```bash
-npm run build                          # tsc -p tsconfig.build.json → build/esm, then esm2cjs → build/cjs, then node tasks
+npm run build                          # tsc -p tsconfig.build.json → build/esm, then esm2cjs → build/cjs, then node tasks.ts
 npm run lint                           # ESLint with @iobroker/eslint-config (test/**/*.js and build/ are excluded)
 npm test                               # = test:integration = mocha --exit  (glob: ./test/*.js, NOT recursive)
 npx mocha --exit test/networks.test.js # run one test file
@@ -31,7 +31,7 @@ Pipeline: **Compose file → `ComposeTop` → `ContainerConfig[]` → Docker API
 - **`src/lib/templates.ts`** — `walkTheConfig()` recurses over the whole parsed tree and applies `parseField()` to every string. Syntaxes: `{{config.a.b}}`, `${config.a.b:-default}`, `${config_a_b:-default}` (underscore alias for jsonConfig validators), `${instance}`. If the pattern *is* the whole string, the raw (non-string) value is returned — that is how booleans and numbers survive.
 - **`src/lib/DockerManager.ts`** — all low-level Docker operations: containers, images, networks, volumes, stats, file operations inside volumes, SSH tunneling.
 - **`src/lib/DockerManagerOfOwnContainers.ts`** — orchestrator on top of it: desired-vs-existing reconciliation, volume provisioning, monitoring, stop on unload.
-- **`src/types.d.ts`** — every shared interface (`ContainerConfig`, `DockerContainerInspect`, `ContainerInfo`, …). Copied verbatim into both build outputs by `tasks.js`.
+- **`src/types.d.ts`** — every shared interface (`ContainerConfig`, `DockerContainerInspect`, `ContainerInfo`, …). Copied verbatim into both build outputs by `tasks.ts`.
 
 ### Two transports in DockerManager (the most important structural fact)
 
@@ -67,6 +67,8 @@ Related gotchas:
 
 `src/index.ts` filters on a truthy `config.iobEnabled`: a service without the label is *not* managed. Do not relax it to `!== false` (there is an explicit comment at that line) — Compose files may legitimately contain services this plugin must leave alone.
 
+An explicit `iobEnabled === false` is different: it switches off a service that may have run before. Those configs are kept apart (`#disabledConfigurations`, not in `configurations`) and handed to the manager after the enabled ones; `#checkOwnContainers()` stops their running containers *first* (only with the label `iobroker=<namespace>`, stop, never remove), so an alternative service can take over the port. Without any enabled service, `#stopDisabledContainers()` runs a temporary `quiet` manager for that and destroys it, so `getDockerManager()` stays null.
+
 ## Naming Conventions
 
 The prefix is `iob_${namespace.replace(/[-.]/g, '_')}`, i.e. `iob_<adapterName>_<instance>`. Container, volume and network names become either that prefix (when the name is `true` or missing) or `<prefix>_<name>`. Used verbatim instead: the network `iobroker`, external networks, and the reserved modes `host`, `bridge`, `none`, `container:<name>` — though the *target* of `container:` follows the renaming of the container it points to.
@@ -77,7 +79,7 @@ The prefix is `iob_${namespace.replace(/[-.]/g, '_')}`, i.e. `iob_<adapterName>_
 
 ## Dual-format Publishing
 
-The package ships ESM (`build/esm/`) and CJS (`build/cjs/`). `postbuild` runs `esm2cjs`, then `tasks.js` copies `src/types.d.ts` and `package.json` into both output dirs and rewrites `build/cjs/index.js` so `module.exports` is `DockerPlugin` itself, with `DockerManager`, `DockerManagerOfOwnContainers`, `resolveDockerApi` and `default` hung off it. Renaming those exports in `src/index.ts` requires updating `tasks.js` too — its `String.replace` fails silently otherwise.
+The package ships ESM (`build/esm/`) and CJS (`build/cjs/`). `postbuild` runs `esm2cjs`, then `tasks.ts` (run by Node directly via type stripping, hence `engines.node >= 22.19`) copies `src/types.d.ts` and `package.json` into both output dirs and rewrites `build/cjs/index.js` so `module.exports` is `DockerPlugin` itself, with `DockerManager`, `DockerManagerOfOwnContainers`, `resolveDockerApi` and `default` hung off it. Renaming those exports in `src/index.ts` requires updating `tasks.ts` too — it aborts the build when `exports.default = DockerPlugin;` is no longer found, but it does not notice a renamed `DockerManager_1`-style identifier (the CJS entry then throws on `require`).
 
 ## Testing
 

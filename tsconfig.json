@@ -10,7 +10,6 @@
         "module": "NodeNext",
         "moduleResolution": "Node16",
         "outDir": "./build/esm" /* Redirect output structure to the directory. */,
-        "rootDir": "./src" /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */,
         "strict": true /* Enable all strict type-checking options. */,
         "esModuleInterop": true /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */,
         "useUnknownInCatchVariables": false,
@@ -18,5 +17,6 @@
         "newLine": "lf",
         "types": ["@iobroker/types", "node"]
     },
-    "include": ["src/**/*.ts", "src/types.d.ts"]
+    // tasks.ts is the post-build script: type-checked and linted here, but not compiled (see tsconfig.build.json)
+    "include": ["src/**/*.ts", "src/types.d.ts", "tasks.ts"]
 }

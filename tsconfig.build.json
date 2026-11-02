@@ -4,5 +4,8 @@
     "compilerOptions": {
         "checkJs": false,
         "strict": false,
-    }
+        "rootDir": "./src" /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */,
+    },
+    // Only the library sources: tasks.ts is executed by Node directly after the build
+    "include": ["src/**/*.ts", "src/types.d.ts"],
 }

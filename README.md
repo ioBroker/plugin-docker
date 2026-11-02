@@ -126,8 +126,9 @@ volumes:
 Add these labels under each service to control behavior:
 
 - `iobEnabled` (**required**, no default)
-  Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label — or with `false` — is left untouched, so a Compose file can contain services that the plugin must not manage.
+  Managing a service is an explicit opt-in: it is only created and started if this label is set to `true`. A service without the label is left untouched, so a Compose file can contain services that the plugin must not manage.
   Typically wired to an adapter setting: `iobEnabled=${config.dockerInflux.enabled:-true}`.
+  With `false` the service is switched off: if its container still runs, the plugin stops it — but only a container that this instance created (label `iobroker=<adapter>.<instance>`), and it does not remove it, so enabling the service again starts the same container. This lets an adapter offer alternative services on the same port, e.g. one image for the CPU and one for a GPU, or Docker as one option next to an external server: the container of the previous choice no longer blocks the port. Disabled containers are stopped before the enabled ones are started. Without any enabled service the plugin probes Docker quietly, as a host without Docker is fine then.
 - `iobStopOnUnload` (default: `false`)
   Set it to `true` to stop the container when the instance stops or is unloaded. Like `iobEnabled`, this is an opt-in: without the label — or with `false` — the container keeps running, so a service that other instances use as well is not torn down behind their back.
   See [Stopping containers on unload](#stopping-containers-on-unload) if your container needs longer than a second to stop.
@@ -242,6 +243,8 @@ configured Docker API. A daemon that does not answer within 5 seconds counts as 
 
 ## Changelog
 ### **WORK IN PROGRESS**
+- (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
+- (@GermanBluefox) Creating a volume through the Docker API reported `Volume undefined created`: dockerode answers with a volume handle, whose name is `name`, not `Name`. The volume itself was created correctly
 - (@GermanBluefox) Templates in the plugin config are now applied. They were resolved and the result thrown away, so `"iobDockerApi": "${config.dockerApi}"` - documented in this README - looked up a connection named `${config.dockerApi}` and fell back to the Docker of the host. The same holds for templates in `iobDockerComposeFiles` and in the fields of a connection object
 - (@GermanBluefox) Added `resolveDockerApi()`: finds the Docker API an instance uses (`iobDockerApi`: none, a name of `system.docker`, or a connection object) the way the plugin does. The js-controller needs it to answer whether an instance can use Docker, and an adapter with a `DockerManager` of its own finds the same Docker with it. A `system.docker` without `hosts` no longer throws
 - (@GermanBluefox) `getDockerDaemonInfo()` reported `daemonRunning: true` for every manager with a Docker API client - a configured API, the socket or a port - without asking the daemon, so a remote Docker that did not answer counted as running. The daemon is asked now (`/_ping`, given up after 5 seconds). An unreachable configured API is logged as such instead of "Docker is not installed" or "run iob fix"

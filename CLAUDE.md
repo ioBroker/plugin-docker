@@ -60,6 +60,7 @@ Related gotchas:
 
 ### Startup and shutdown timing
 
+- Every probe of `DockerManager.init()` (daemon version, ports 2375/2376, `docker ps`) gives up after `STARTUP_TIMEOUT_MS` (2 min), the `/_ping` of `getDockerDaemonInfo()` after `PING_TIMEOUT_MS` (5 s); dockerode requests go through `askDaemon()`, which also cancels the pending request. Do not shorten `STARTUP_TIMEOUT_MS`: `init()` is not retried, so a version probe that gives up means "no Docker" for the whole run, and at boot systemd's `docker.socket` accepts the connection long before dockerd answers.
 - If any container has `iobWaitForReady`, the manager is **not** started in `init()`. The adapter has to call `plugin.instanceIsReady()` once it has written its provisioning files.
 - `destroy()` is awaited by the js-controller's PluginHandler and stops the `iobStopOnUnload` containers in parallel, without surrounding container listings, because the host kills the adapter process `common.stopTimeout` ms (1000 by default) after requesting the stop. Do not add Docker round trips there. See the README section "Stopping containers on unload".
 

@@ -33,6 +33,34 @@ import type { ConnectConfig } from 'ssh2';
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
 
+/** A dockerode request that passes `abortSignal` on to its HTTP request - `@types/dockerode` only lacks the parameter */
+type AbortableRequest<T> = (options: { abortSignal: AbortSignal }) => Promise<T>;
+
+/**
+ * Ask the daemon, but not forever.
+ *
+ * A daemon or proxy that accepts the connection and never replies would keep the request pending
+ * without end. After `timeoutMs` the request is given up and its connection closed.
+ *
+ * @param request the dockerode request, bound to its client
+ * @param endpoint API path for the error message, e.g. `/_ping`
+ * @param timeoutMs milliseconds to wait for the answer
+ * @returns the answer of the daemon
+ */
+async function askDaemon<T>(request: AbortableRequest<T>, endpoint: string, timeoutMs: number): Promise<T> {
+    const abort = new AbortController();
+    try {
+        return await DockerManager.withTimeout(
+            request({ abortSignal: abort.signal }),
+            timeoutMs,
+            `no answer to ${endpoint} within ${timeoutMs} ms`,
+        );
+    } finally {
+        // closes the connection of a request that is still pending; no-op once it is answered
+        abort.abort();
+    }
+}
+
 /**
  * Quote a single argument for display in a shell command line.
  *
@@ -172,6 +200,19 @@ export default class DockerManager {
      */
     static PING_TIMEOUT_MS = 5_000;
 
+    /**
+     * How long `init()` waits for each of its probes: the version of the daemon, a Docker API on
+     * port 2375/2376 and `docker ps`.
+     *
+     * Generous on purpose: at boot, systemd's `docker.socket` accepts the connection before dockerd
+     * runs, and the answer only comes once dockerd has started, which takes a while on a small host.
+     * A version probe that gives up counts as "no Docker" for the whole run of the adapter, so it
+     * must not give up on a daemon that is merely slow. The timeout only keeps a daemon that never
+     * answers from blocking `isReady()` - and with it the plugin and the `checkDocker` control -
+     * forever. Writable for the tests.
+     */
+    static STARTUP_TIMEOUT_MS = 120_000;
+
     protected installed: boolean = false;
     protected dockerVersion: string = '';
     protected needSudo: boolean = false;
@@ -300,10 +341,20 @@ export default class DockerManager {
         });
     }
 
-    static async isDockerApiRunningOnPort(port: number, host = 'localhost'): Promise<boolean> {
+    static async isDockerApiRunningOnPort(
+        port: number,
+        host = 'localhost',
+        timeoutMs = DockerManager.STARTUP_TIMEOUT_MS,
+    ): Promise<boolean> {
         return new Promise(resolve => {
             const socket = createConnection({ port, host }, () => {
                 socket.write('GET /version HTTP/1.0\r\nHost: localhost\r\n\r\n');
+            });
+
+            // something that accepts the connection but neither answers nor closes it is no Docker API
+            socket.setTimeout(timeoutMs, () => {
+                socket.destroy();
+                resolve(false);
             });
 
             let data = '';
@@ -386,25 +437,13 @@ export default class DockerManager {
         if (this.#dockerode) {
             // Ask the daemon: a configured API is not probed before it is used, and a socket or port that answered
             // in init() may be gone since
-            const timeoutMs = DockerManager.PING_TIMEOUT_MS;
-            const abort = new AbortController();
-            // dockerode passes `abortSignal` on to the HTTP request, @types/dockerode only lacks the parameter
-            const ping = this.#dockerode.ping.bind(this.#dockerode) as (options: {
-                abortSignal: AbortSignal;
-            }) => Promise<unknown>;
+            const ping = this.#dockerode.ping.bind(this.#dockerode) as AbortableRequest<unknown>;
             try {
-                await DockerManager.withTimeout(
-                    ping({ abortSignal: abort.signal }),
-                    timeoutMs,
-                    `no answer to /_ping within ${timeoutMs} ms`,
-                );
+                await askDaemon(ping, '/_ping', DockerManager.PING_TIMEOUT_MS);
                 return true;
             } catch (e) {
                 this.log.debug(`Docker daemon does not answer: ${e.message}`);
                 return false;
-            } finally {
-                // closes the connection of a ping that is still pending; no-op once it is answered
-                abort.abort();
             }
         }
         try {
@@ -542,8 +581,9 @@ export default class DockerManager {
                 this.log.debug(`Docker not installed: ${e.message}`);
             }
         } else if (this.#dockerode) {
+            const version = this.#dockerode.version.bind(this.#dockerode) as AbortableRequest<Docker.DockerVersion>;
             try {
-                const info = await this.#dockerode.version();
+                const info = await askDaemon(version, '/version', DockerManager.STARTUP_TIMEOUT_MS);
                 if (info?.Version) {
                     return `Docker version ${info.Version}, api version: ${info.ApiVersion}`;
                 }
@@ -555,10 +595,17 @@ export default class DockerManager {
     }
 
     async #isNeedSudo(): Promise<boolean> {
+        const timeoutMs = DockerManager.STARTUP_TIMEOUT_MS;
         try {
-            await execPromise('docker ps');
+            // without a shell in between, so the timeout kills docker itself and not only a shell around it
+            await execFilePromise('docker', ['ps'], { timeout: timeoutMs });
             return false;
-        } catch {
+        } catch (e) {
+            if (e.killed) {
+                // missing permissions are reported at once; a daemon that does not answer says nothing about them
+                this.log.debug(`"docker ps" did not finish within ${timeoutMs} ms, assuming no sudo is needed`);
+                return false;
+            }
             return true;
         }
     }

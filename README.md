@@ -227,6 +227,8 @@ const dockerManager = new DockerManager({ dockerApi, logger, namespace: 'admin.0
 
 `daemonRunning` of `getDockerDaemonInfo()` asks the daemon (`/_ping`) on every call, also for a
 configured Docker API. A daemon that does not answer within 5 seconds counts as not running.
+While the manager starts, it waits up to 2 minutes for the daemon: at boot, dockerd may still be
+starting behind its socket. A daemon that does not answer by then counts as not installed.
 
 ## Best Practices
 
@@ -242,6 +244,9 @@ configured Docker API. A daemon that does not answer within 5 seconds counts as 
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) A Docker daemon that accepts the connection but never answers no longer blocks the start of the manager forever - and with it the containers of the adapter and the `checkDocker` control, which waited for that start. The version probe, the probe of the ports 2375/2376 and `docker ps` now give up after 2 minutes; the open request is closed. The limit is generous on purpose: at boot, systemd accepts the connection on `docker.socket` before dockerd runs, and a slow start must not count as "no Docker"
+
 ### 1.3.0 (2026-11-02)
 - (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
 - (@GermanBluefox) Creating a volume through the Docker API reported `Volume undefined created`: dockerode answers with a volume handle, whose name is `name`, not `Name`. The volume itself was created correctly

@@ -49,7 +49,7 @@ Add the following to the `common.plugins` section:
 
 Field notes:
 
-- `iobDockerApi` (optional): Name of a Docker connection defined under `system.docker => native`. You may also use a pattern like `${config.dockerApiName}` to reference adapter config.
+- `iobDockerApi` (optional): Name of a Docker connection defined under `system.docker => native.hosts`, or a connection object `{ host, port, protocol }`. You may also use a pattern like `${config.dockerApiName}` to reference adapter config, in the name as in the fields of an object. A name that `system.docker` does not define falls back to the Docker of the host, with a warning in the log.
 - `iobDockerComposeFiles`: Array of relative paths (from the adapter root directory) to Docker Compose files.
 
 ## Docker Compose File Basics
@@ -208,6 +208,22 @@ returned by `getDockerDaemonInfo()` anyway, and the caller reports it in its own
 Leave `quiet` unset for a manager that runs containers: there a missing Docker means the containers
 will not start, and the user has to see it.
 
+To probe the Docker an *instance* uses - which may be a connection of `system.docker` instead of the
+Docker of the host - find it the way the plugin does, with `resolveDockerApi()`, and pass it on:
+
+```js
+const { DockerManager, resolveDockerApi } = require('@iobroker/plugin-docker');
+
+const dockerApi = await resolveDockerApi({
+    iobDockerApi: ioPackage.common.plugins.docker.iobDockerApi, // as written, templates are resolved here
+    instanceConfig: instanceObj.native,
+    instance: 0,
+    getSystemDocker: () => adapter.getForeignObjectAsync('system.docker'),
+    log: adapter.log,
+});
+const dockerManager = new DockerManager({ dockerApi, logger, namespace: 'admin.0', quiet: true });
+```
+
 ## Best Practices
 
 - Keep Compose files minimal—only declare what you manage via the adapter.
@@ -222,6 +238,10 @@ will not start, and the user has to see it.
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Templates in the plugin config are now applied. They were resolved and the result thrown away, so `"iobDockerApi": "${config.dockerApi}"` - documented in this README - looked up a connection named `${config.dockerApi}` and fell back to the Docker of the host. The same holds for templates in `iobDockerComposeFiles` and in the fields of a connection object
+- (@GermanBluefox) Added `resolveDockerApi()`: finds the Docker API an instance uses (`iobDockerApi`: none, a name of `system.docker`, or a connection object) the way the plugin does. The js-controller needs it to answer whether an instance can use Docker, and an adapter with a `DockerManager` of its own finds the same Docker with it. A `system.docker` without `hosts` no longer throws
+
 ### 1.2.1 (2026-08-28)
 - (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`
 - (@GermanBluefox) `devices` is now really passed to the container. It was parsed from the compose file and then dropped by both drivers, and it was excluded from the comparison, which hid the gap. A service that needs a device - a Coral TPU, a video device, a serial adapter - only got it when it also ran `privileged`, where docker hands over the whole `/dev` of the host anyway. Container path and cgroup permissions are filled in the way docker does (`rwm`), on both sides of the comparison, so a device no longer forces a recreate on every check but a *changed* device does

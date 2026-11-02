@@ -9,6 +9,7 @@ text = text.replace(
     `module.exports = DockerPlugin;
 module.exports.DockerManagerOfOwnContainers = DockerManagerOfOwnContainers_1.default;
 module.exports.DockerManager = DockerManager_1.default;
+module.exports.resolveDockerApi = dockerApi_1.resolveDockerApi;
 module.exports.default = DockerPlugin;`,
 );
 writeFileSync(`${__dirname}/build/cjs/index.js`, text, 'utf8');

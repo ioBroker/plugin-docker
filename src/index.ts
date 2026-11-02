@@ -28,12 +28,15 @@ import type {
 import composeFromYaml, { type ComposeTop } from './lib/parseDockerCompose';
 import { composeToContainerConfigs } from './lib/compose2config';
 import { walkTheConfig } from './lib/templates';
+import { resolveDockerApi, type DockerApiConfig } from './lib/dockerApi';
 
 export type DockerConfig = ComposeTop;
 
 export {
     DockerManagerOfOwnContainers,
     DockerManager,
+    resolveDockerApi,
+    type DockerApiConfig,
     type ContainerConfig,
     type ContainerInfo,
     type ImageInfo,
@@ -56,16 +59,8 @@ export {
 export default class DockerPlugin extends PluginBase {
     #dockerManager: DockerManagerOfOwnContainers | null = null;
     #configurations: ContainerConfig[] = [];
-    #iobDockerApi:
-        | {
-              host: string;
-              port: number;
-              protocol: 'http' | 'https';
-              ca?: string;
-              cert?: string;
-              key?: string;
-          }
-        | undefined; // ioBroker setting;
+    /** The Docker API of iobDockerApi, undefined for the Docker of the host */
+    #iobDockerApi: DockerApiConfig | undefined;
     /** Return the Docker configurations that will be managed */
     get configurations(): ContainerConfig[] {
         return this.#configurations;
@@ -106,13 +101,14 @@ export default class DockerPlugin extends PluginBase {
         if (isNaN(instance)) {
             throw new Error(`Cannot find instance number in ${this.settings.parentNamespace}`);
         }
-        walkTheConfig(pluginConfig, instanceObj.native, {
+        // The plugin config may hold templates too. iobDockerApi is resolved below, by resolveDockerApi().
+        const renderedConfig: DockerConfig = walkTheConfig(pluginConfig, instanceObj.native, {
             instance,
         });
 
         // If dockerFiles is specified, read the files and merge them with dockerConfigs
-        if (pluginConfig.iobDockerComposeFiles) {
-            for (const filePath of pluginConfig.iobDockerComposeFiles) {
+        if (renderedConfig.iobDockerComposeFiles) {
+            for (const filePath of renderedConfig.iobDockerComposeFiles) {
                 try {
                     const fileContent = readFileSync(`${this.settings.adapterDir}/${filePath}`, 'utf-8');
                     let parsed: Record<string, any> | undefined;
@@ -173,43 +169,20 @@ export default class DockerPlugin extends PluginBase {
             return;
         }
 
-        // If any container has iobDockerApi, we need to read available docker configurations
-        if (pluginConfig.iobDockerApi && typeof pluginConfig.iobDockerApi === 'string') {
-            // If iobDockerApi is a string, we need to read the system.docker object
-            const systemDockerObj: ioBroker.Object | null | undefined = await this.getObject('system.docker');
-            const nativeConfig = systemDockerObj?.native as
-                | {
-                      hosts: {
-                          [name: string]: {
-                              host: string;
-                              port: number;
-                              protocol: 'http' | 'https';
-                              ca?: string;
-                              cert?: string;
-                              key?: string;
-                          };
-                      };
-                  }
-                | undefined;
-            if (nativeConfig) {
-                // Replace all iobDockerApi strings with actual config objects
-                // fallback to the local socket if no system.docker object
-                if (!nativeConfig.hosts[pluginConfig.iobDockerApi]) {
-                    this.log.warn(`Cannot find docker configuration for ${pluginConfig.iobDockerApi}`);
-                    delete pluginConfig.iobDockerApi;
-                } else {
-                    pluginConfig.iobDockerApi = nativeConfig.hosts[pluginConfig.iobDockerApi];
-                }
-            } else {
-                this.log.warn(
-                    'Cannot find system.docker object, but at least one container requires it. Will use local socket',
-                );
-                delete pluginConfig.iobDockerApi;
-            }
-        }
-
-        if (typeof pluginConfig.iobDockerApi === 'object') {
-            this.#iobDockerApi = pluginConfig.iobDockerApi;
+        // The Docker API the containers run on: the one of the host, or a connection of system.docker
+        this.#iobDockerApi = await resolveDockerApi({
+            iobDockerApi: pluginConfig.iobDockerApi,
+            instanceConfig: instanceObj.native,
+            instance,
+            getSystemDocker: () => this.getObject('system.docker'),
+            log: this.log,
+        });
+        // As before: the plugin config holds the resolved connection afterwards. Adapters read it there, with
+        // getPluginConfig('docker'), to create a DockerManager of their own for the same Docker.
+        if (this.#iobDockerApi) {
+            pluginConfig.iobDockerApi = this.#iobDockerApi;
+        } else {
+            delete pluginConfig.iobDockerApi;
         }
 
         if (!this.#configurations.find(conf => conf.iobWaitForReady)) {

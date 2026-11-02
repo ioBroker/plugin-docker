@@ -24,7 +24,8 @@ npx mocha --exit --grep "iobEnabled"   # run one suite/test by name
 
 Pipeline: **Compose file → `ComposeTop` → `ContainerConfig[]` → Docker API/CLI calls**.
 
-- **`src/index.ts`** — `DockerPlugin extends PluginBase`. Reads the instance object, runs template substitution over the plugin config and each Compose file, converts to `ContainerConfig[]`, and starts `DockerManagerOfOwnContainers`. Also re-exports `DockerManager`, `DockerManagerOfOwnContainers` and the public types.
+- **`src/index.ts`** — `DockerPlugin extends PluginBase`. Reads the instance object, runs template substitution over the plugin config and each Compose file, converts to `ContainerConfig[]`, and starts `DockerManagerOfOwnContainers`. Also re-exports `DockerManager`, `DockerManagerOfOwnContainers`, `resolveDockerApi` and the public types.
+- **`src/lib/dockerApi.ts`** — `resolveDockerApi()`: which Docker API an instance uses (`iobDockerApi`: none, a name of `system.docker`, or a connection object; templates resolved). Exported, so that the js-controller and adapters with an own `DockerManager` find the same Docker as the plugin.
 - **`src/lib/parseDockerCompose.ts`** — YAML text → typed `ComposeTop` (services, networks, volumes).
 - **`src/lib/compose2config.ts`** — `ComposeTop` → `ContainerConfig[]`; maps ports/volumes/networks/healthcheck/restart/resources and lifts the `iob*` labels out of `labels` into dedicated fields.
 - **`src/lib/templates.ts`** — `walkTheConfig()` recurses over the whole parsed tree and applies `parseField()` to every string. Syntaxes: `{{config.a.b}}`, `${config.a.b:-default}`, `${config_a_b:-default}` (underscore alias for jsonConfig validators), `${instance}`. If the pattern *is* the whole string, the raw (non-string) value is returned — that is how booleans and numbers survive.
@@ -76,7 +77,7 @@ The prefix is `iob_${namespace.replace(/[-.]/g, '_')}`, i.e. `iob_<adapterName>_
 
 ## Dual-format Publishing
 
-The package ships ESM (`build/esm/`) and CJS (`build/cjs/`). `postbuild` runs `esm2cjs`, then `tasks.js` copies `src/types.d.ts` and `package.json` into both output dirs and rewrites `build/cjs/index.js` so `module.exports` is `DockerPlugin` itself, with `DockerManager`, `DockerManagerOfOwnContainers` and `default` hung off it. Renaming those exports in `src/index.ts` requires updating `tasks.js` too — its `String.replace` fails silently otherwise.
+The package ships ESM (`build/esm/`) and CJS (`build/cjs/`). `postbuild` runs `esm2cjs`, then `tasks.js` copies `src/types.d.ts` and `package.json` into both output dirs and rewrites `build/cjs/index.js` so `module.exports` is `DockerPlugin` itself, with `DockerManager`, `DockerManagerOfOwnContainers`, `resolveDockerApi` and `default` hung off it. Renaming those exports in `src/index.ts` requires updating `tasks.js` too — its `String.replace` fails silently otherwise.
 
 ## Testing
 

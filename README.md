@@ -225,6 +225,7 @@ will not start, and the user has to see it.
 ## Changelog
 ### **WORK IN PROGRESS**
 - (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
+- (@GermanBluefox) Creating a volume through the Docker API reported `Volume undefined created`: dockerode answers with a volume handle, whose name is `name`, not `Name`. The volume itself was created correctly
 
 ### 1.2.1 (2026-08-28)
 - (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`

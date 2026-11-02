@@ -164,6 +164,14 @@ export default class DockerManager {
      */
     static readonly RUN_AND_WAIT_TIMEOUT_MS = 300_000;
 
+    /**
+     * How long `getDockerDaemonInfo()` waits for the daemon to answer `/_ping`.
+     *
+     * A daemon or proxy that accepts the connection but never replies would otherwise keep the
+     * check, and the `checkDocker` control waiting on it, pending forever. Writable for the tests.
+     */
+    static PING_TIMEOUT_MS = 5_000;
+
     protected installed: boolean = false;
     protected dockerVersion: string = '';
     protected needSudo: boolean = false;
@@ -352,6 +360,11 @@ export default class DockerManager {
         this.installed = !!version;
         if (version) {
             this.dockerVersion = version;
+        } else if (this.dockerApi?.host && this.dockerApi.port) {
+            // a configured API: the local CLI or daemon say nothing about it
+            this.logDockerUnavailable(
+                `The Docker API ${this.dockerApi.protocol || 'http'}://${this.dockerApi.host}:${this.dockerApi.port} does not answer`,
+            );
         } else {
             const daemonRunning = await this.#isDockerDaemonRunning();
             if (daemonRunning) {
@@ -371,7 +384,28 @@ export default class DockerManager {
 
     async #isDockerDaemonRunning(): Promise<boolean> {
         if (this.#dockerode) {
-            return true;
+            // Ask the daemon: a configured API is not probed before it is used, and a socket or port that answered
+            // in init() may be gone since
+            const timeoutMs = DockerManager.PING_TIMEOUT_MS;
+            const abort = new AbortController();
+            // dockerode passes `abortSignal` on to the HTTP request, @types/dockerode only lacks the parameter
+            const ping = this.#dockerode.ping.bind(this.#dockerode) as (options: {
+                abortSignal: AbortSignal;
+            }) => Promise<unknown>;
+            try {
+                await DockerManager.withTimeout(
+                    ping({ abortSignal: abort.signal }),
+                    timeoutMs,
+                    `no answer to /_ping within ${timeoutMs} ms`,
+                );
+                return true;
+            } catch (e) {
+                this.log.debug(`Docker daemon does not answer: ${e.message}`);
+                return false;
+            } finally {
+                // closes the connection of a ping that is still pending; no-op once it is answered
+                abort.abort();
+            }
         }
         try {
             const { stdout, stderr } = await execPromise('systemctl status docker');

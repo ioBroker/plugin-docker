@@ -10,7 +10,7 @@ copyFileSync(`${__dirname}/src/types.d.ts`, `${__dirname}/build/cjs/types.d.ts`)
 copyFileSync(`${__dirname}/package.json`, `${__dirname}/build/esm/package.json`);
 copyFileSync(`${__dirname}/package.json`, `${__dirname}/build/cjs/package.json`);
 
-// Make `require('@iobroker/plugin-docker')` return DockerPlugin itself, with the managers hung off it.
+// Make `require('@iobroker/plugin-docker')` return DockerPlugin itself, with the managers and helpers hung off it.
 const cjsIndexPath = `${__dirname}/build/cjs/index.js`;
 const cjsDefaultExport = 'exports.default = DockerPlugin;';
 const cjsIndex: string = readFileSync(cjsIndexPath, 'utf8');
@@ -24,6 +24,7 @@ writeFileSync(
         `module.exports = DockerPlugin;
 module.exports.DockerManagerOfOwnContainers = DockerManagerOfOwnContainers_1.default;
 module.exports.DockerManager = DockerManager_1.default;
+module.exports.resolveDockerApi = dockerApi_1.resolveDockerApi;
 module.exports.default = DockerPlugin;`,
     ),
     'utf8',

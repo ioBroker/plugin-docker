@@ -49,7 +49,7 @@ Add the following to the `common.plugins` section:
 
 Field notes:
 
-- `iobDockerApi` (optional): Name of a Docker connection defined under `system.docker => native`. You may also use a pattern like `${config.dockerApiName}` to reference adapter config.
+- `iobDockerApi` (optional): Name of a Docker connection defined under `system.docker => native.hosts`, or a connection object `{ host, port, protocol }`. You may also use a pattern like `${config.dockerApiName}` to reference adapter config, in the name as in the fields of an object. A name that `system.docker` does not define falls back to the Docker of the host, with a warning in the log.
 - `iobDockerComposeFiles`: Array of relative paths (from the adapter root directory) to Docker Compose files.
 
 ## Docker Compose File Basics
@@ -209,6 +209,25 @@ returned by `getDockerDaemonInfo()` anyway, and the caller reports it in its own
 Leave `quiet` unset for a manager that runs containers: there a missing Docker means the containers
 will not start, and the user has to see it.
 
+To probe the Docker an *instance* uses - which may be a connection of `system.docker` instead of the
+Docker of the host - find it the way the plugin does, with `resolveDockerApi()`, and pass it on:
+
+```js
+const { DockerManager, resolveDockerApi } = require('@iobroker/plugin-docker');
+
+const dockerApi = await resolveDockerApi({
+    iobDockerApi: ioPackage.common.plugins.docker.iobDockerApi, // as written, templates are resolved here
+    instanceConfig: instanceObj.native,
+    instance: 0,
+    getSystemDocker: () => adapter.getForeignObjectAsync('system.docker'),
+    log: adapter.log,
+});
+const dockerManager = new DockerManager({ dockerApi, logger, namespace: 'admin.0', quiet: true });
+```
+
+`daemonRunning` of `getDockerDaemonInfo()` asks the daemon (`/_ping`) on every call, also for a
+configured Docker API. A daemon that does not answer within 5 seconds counts as not running.
+
 ## Best Practices
 
 - Keep Compose files minimal—only declare what you manage via the adapter.
@@ -226,6 +245,9 @@ will not start, and the user has to see it.
 ### **WORK IN PROGRESS**
 - (@GermanBluefox) A service switched off with `iobEnabled=false` no longer leaves its container running. Before, the plugin ignored such a service completely, so after switching an adapter from one variant of a service to another - CPU to GPU image, or Docker to an external server - the old container kept running and blocked the port of the new one. Now the plugin stops it before it starts the enabled services, also when no service is enabled at all. Only containers that the instance created itself are stopped, and they are not removed. A service without the label is still left alone
 - (@GermanBluefox) Creating a volume through the Docker API reported `Volume undefined created`: dockerode answers with a volume handle, whose name is `name`, not `Name`. The volume itself was created correctly
+- (@GermanBluefox) Templates in the plugin config are now applied. They were resolved and the result thrown away, so `"iobDockerApi": "${config.dockerApi}"` - documented in this README - looked up a connection named `${config.dockerApi}` and fell back to the Docker of the host. The same holds for templates in `iobDockerComposeFiles` and in the fields of a connection object
+- (@GermanBluefox) Added `resolveDockerApi()`: finds the Docker API an instance uses (`iobDockerApi`: none, a name of `system.docker`, or a connection object) the way the plugin does. The js-controller needs it to answer whether an instance can use Docker, and an adapter with a `DockerManager` of its own finds the same Docker with it. A `system.docker` without `hosts` no longer throws
+- (@GermanBluefox) `getDockerDaemonInfo()` reported `daemonRunning: true` for every manager with a Docker API client - a configured API, the socket or a port - without asking the daemon, so a remote Docker that did not answer counted as running. The daemon is asked now (`/_ping`, given up after 5 seconds). An unreachable configured API is logged as such instead of "Docker is not installed" or "run iob fix"
 
 ### 1.2.1 (2026-08-28)
 - (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`

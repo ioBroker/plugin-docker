@@ -352,6 +352,11 @@ export default class DockerManager {
         this.installed = !!version;
         if (version) {
             this.dockerVersion = version;
+        } else if (this.dockerApi?.host && this.dockerApi.port) {
+            // a configured API: the local CLI or daemon say nothing about it
+            this.logDockerUnavailable(
+                `The Docker API ${this.dockerApi.protocol || 'http'}://${this.dockerApi.host}:${this.dockerApi.port} does not answer`,
+            );
         } else {
             const daemonRunning = await this.#isDockerDaemonRunning();
             if (daemonRunning) {
@@ -371,7 +376,15 @@ export default class DockerManager {
 
     async #isDockerDaemonRunning(): Promise<boolean> {
         if (this.#dockerode) {
-            return true;
+            // Ask the daemon: a configured API is not probed before it is used, and a socket or port that answered
+            // in init() may be gone since
+            try {
+                await this.#dockerode.ping();
+                return true;
+            } catch (e) {
+                this.log.debug(`Docker daemon does not answer: ${e.message}`);
+                return false;
+            }
         }
         try {
             const { stdout, stderr } = await execPromise('systemctl status docker');

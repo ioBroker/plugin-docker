@@ -2588,7 +2588,8 @@ export default class DockerManager {
             if (!volumes.find(it => it.name === name)) {
                 throw new Error(`Volume ${name} not found after creation`);
             }
-            return { stdout: `Volume ${vol.Name} created`, stderr: '', volumes };
+            // dockerode resolves createVolume() with a Volume handle (lower-case `name`), not with the API response
+            return { stdout: `Volume ${vol.name} created`, stderr: '', volumes };
         }
         let result: { stdout: string; stderr: string };
         if (driver === 'local' || !driver) {

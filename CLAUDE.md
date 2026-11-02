@@ -66,6 +66,8 @@ Related gotchas:
 
 `src/index.ts` filters on a truthy `config.iobEnabled`: a service without the label is *not* managed. Do not relax it to `!== false` (there is an explicit comment at that line) — Compose files may legitimately contain services this plugin must leave alone.
 
+An explicit `iobEnabled === false` is different: it switches off a service that may have run before. Those configs are kept apart (`#disabledConfigurations`, not in `configurations`) and handed to the manager after the enabled ones; `#checkOwnContainers()` stops their running containers *first* (only with the label `iobroker=<namespace>`, stop, never remove), so an alternative service can take over the port. Without any enabled service, `#stopDisabledContainers()` runs a temporary `quiet` manager for that and destroys it, so `getDockerManager()` stays null.
+
 ## Naming Conventions
 
 The prefix is `iob_${namespace.replace(/[-.]/g, '_')}`, i.e. `iob_<adapterName>_<instance>`. Container, volume and network names become either that prefix (when the name is `true` or missing) or `<prefix>_<name>`. Used verbatim instead: the network `iobroker`, external networks, and the reserved modes `host`, `bridge`, `none`, `container:<name>` — though the *target* of `container:` follows the renaming of the container it points to.

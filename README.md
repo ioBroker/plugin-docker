@@ -225,7 +225,7 @@ const dockerManager = new DockerManager({ dockerApi, logger, namespace: 'admin.0
 ```
 
 `daemonRunning` of `getDockerDaemonInfo()` asks the daemon (`/_ping`) on every call, also for a
-configured Docker API.
+configured Docker API. A daemon that does not answer within 5 seconds counts as not running.
 
 ## Best Practices
 
@@ -244,7 +244,7 @@ configured Docker API.
 ### **WORK IN PROGRESS**
 - (@GermanBluefox) Templates in the plugin config are now applied. They were resolved and the result thrown away, so `"iobDockerApi": "${config.dockerApi}"` - documented in this README - looked up a connection named `${config.dockerApi}` and fell back to the Docker of the host. The same holds for templates in `iobDockerComposeFiles` and in the fields of a connection object
 - (@GermanBluefox) Added `resolveDockerApi()`: finds the Docker API an instance uses (`iobDockerApi`: none, a name of `system.docker`, or a connection object) the way the plugin does. The js-controller needs it to answer whether an instance can use Docker, and an adapter with a `DockerManager` of its own finds the same Docker with it. A `system.docker` without `hosts` no longer throws
-- (@GermanBluefox) `getDockerDaemonInfo()` reported `daemonRunning: true` for every manager with a Docker API client - a configured API, the socket or a port - without asking the daemon, so a remote Docker that did not answer counted as running. The daemon is asked now (`/_ping`). An unreachable configured API is logged as such instead of "Docker is not installed" or "run iob fix"
+- (@GermanBluefox) `getDockerDaemonInfo()` reported `daemonRunning: true` for every manager with a Docker API client - a configured API, the socket or a port - without asking the daemon, so a remote Docker that did not answer counted as running. The daemon is asked now (`/_ping`, given up after 5 seconds). An unreachable configured API is logged as such instead of "Docker is not installed" or "run iob fix"
 
 ### 1.2.1 (2026-08-28)
 - (@GermanBluefox) An empty default no longer becomes the number zero: `${config.x:-}` handed a literal `0` to the container when the value was missing, because `Number('')` is 0. A server URL, a plugin list or a password that asked for "nothing" arrived as `"0"`

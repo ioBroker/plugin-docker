@@ -7,12 +7,19 @@ const DockerManager = DockerManagerModule.default || DockerManagerModule;
 /**
  * A Docker API that answers `/_ping` and `/version` like dockerd
  *
- * @returns the server, its port and the requests it got
+ * @returns the server, its port, the requests it got and its state: with `hang` set it accepts requests
+ *   but never answers them, `abandoned` counts those whose connection the client closed
  */
 async function fakeDockerApi() {
     const requests = [];
+    const state = { hang: false, abandoned: 0 };
     const server = http.createServer((req, res) => {
         requests.push(req.url);
+        if (state.hang) {
+            // never ended, so 'close' only comes when the client drops the connection
+            res.on('close', () => state.abandoned++);
+            return;
+        }
         res.setHeader('Api-Version', '1.51');
         if (req.url.endsWith('/_ping')) {
             res.setHeader('Content-Type', 'text/plain');
@@ -26,7 +33,25 @@ async function fakeDockerApi() {
         }
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    return { server, port: server.address().port, requests };
+    return { server, port: server.address().port, requests, state };
+}
+
+/**
+ * Wait until a condition holds
+ *
+ * @param condition checked every 10 ms
+ * @param timeoutMs give up after this many milliseconds
+ * @returns whether the condition held in time
+ */
+async function waitFor(condition, timeoutMs = 2_000) {
+    const end = Date.now() + timeoutMs;
+    while (!condition()) {
+        if (Date.now() > end) {
+            return false;
+        }
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return true;
 }
 
 /**
@@ -103,5 +128,31 @@ describe('getDockerDaemonInfo', function () {
         await stop(server);
 
         assert.equal((await manager.getDockerDaemonInfo()).daemonRunning, false);
+    });
+
+    it('gives up on a Docker API that accepts the ping but never answers, and cancels the request', async () => {
+        const { server, port, state } = await fakeDockerApi();
+        const pingTimeout = DockerManager.PING_TIMEOUT_MS;
+        DockerManager.PING_TIMEOUT_MS = 300;
+        try {
+            const { manager, logs } = managerFor(port);
+            await manager.isReady();
+            state.hang = true;
+
+            const start = Date.now();
+            const info = await manager.getDockerDaemonInfo();
+
+            // used to stay pending forever
+            assert.equal(info.daemonRunning, false);
+            assert.ok(Date.now() - start < 3_000, `took ${Date.now() - start} ms`);
+            assert.match(logs.join('\n'), /no answer to \/_ping within 300 ms/);
+            assert.ok(
+                await waitFor(() => state.abandoned === 1),
+                'the pending /_ping has to be cancelled, not left open',
+            );
+        } finally {
+            DockerManager.PING_TIMEOUT_MS = pingTimeout;
+            await stop(server);
+        }
     });
 });

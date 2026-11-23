@@ -648,7 +648,7 @@ export type ImageInfo = {
     tag: string;
     /** All references of the image by tag, e.g. `['influxdb:2', 'influxdb:2.7']` */
     tags?: string[];
-    /** All references of the image by digest, e.g. `['openthread/otbr@sha256:e7f6...']` */
+    /** All references of the image by digest, e.g. `['openthread/border-router@sha256:5ae1...']` */
     digests?: string[];
     id: string;
     createdSince: string;

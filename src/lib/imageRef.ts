@@ -37,6 +37,12 @@ export function normalizeImageRef(ref: string): string {
     return parsed.tag || parsed.digest ? trimmed : `${parsed.name}:latest`;
 }
 
+/** The reference to pull: with a digest the tag does not count and is dropped (`name:tag@sha256:...` → `name@sha256:...`) */
+export function pullableImageRef(ref: string): string {
+    const parsed = parseImageRef(normalizeImageRef(ref));
+    return parsed.digest ? `${parsed.name}@${parsed.digest}` : `${parsed.name}:${parsed.tag}`;
+}
+
 /** Docker Hub names in their short form: `docker.io/library/nginx` and `library/nginx` are `nginx` */
 function canonicalName(name: string): string {
     return name.replace(/^(?:index\.)?docker\.io\//, '').replace(/^library\//, '');

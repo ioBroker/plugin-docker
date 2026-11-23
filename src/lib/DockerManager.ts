@@ -36,6 +36,7 @@ import {
     imageMatches,
     isDigestRef,
     normalizeImageRef,
+    pullableImageRef,
 } from './imageRef';
 
 const execPromise = promisify(exec);
@@ -764,7 +765,8 @@ export default class DockerManager {
     async imagePull(image: ImageName): Promise<{ stdout: string; stderr: string; images?: ImageInfo[] }> {
         image = normalizeImageRef(image);
         if (this.#dockerode) {
-            const stream = await this.#dockerode.pull(image);
+            // dockerode would send `name:tag` as repository and the digest as tag; the Docker CLI sends the name only
+            const stream = await this.#dockerode.pull(pullableImageRef(image));
             if (!stream) {
                 throw new Error('No stream returned');
             }

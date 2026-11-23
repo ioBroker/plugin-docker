@@ -174,13 +174,13 @@ e.g. when the service has to fit to firmware or data of the adapter, or when the
 ```yaml
 services:
     otbr:
-        image: 'openthread/otbr@sha256:e7f6fab57bbcb1b6fa6f50dd3e8d0739fa9dbb23e8af61a671ac6536e0ae7d1e'
-        # or with a tag for the reader, the digest wins: 'openthread/otbr:latest@sha256:e7f6...'
+        image: 'openthread/border-router@sha256:5ae17855e42000abce4420098c3cc0f16d8b7cf3745ee091810afad75b37d1cc'
+        # or with a tag for the reader, the digest wins: 'openthread/border-router:v2026.11.0@sha256:5ae1...'
 ```
 
-- The image is pulled once; `iobAutoImageUpdate` has no effect, a digest never gets a newer image.
+- The image is pulled once (by digest, the tag is not sent); `iobAutoImageUpdate` has no effect, a digest never gets a newer image.
 - A new version of the adapter with another digest in its compose file recreates the container with the new image.
-- Get the digest of an image with `docker buildx imagetools inspect openthread/otbr:latest` (the `Digest` of the
+- Get the digest of an image with `docker buildx imagetools inspect openthread/border-router:v2026.11.0` (the `Digest` of the
   index, valid for all architectures) or from the registry website.
 
 Images are found by any of their tags and digests, and `docker.io/library/nginx` is the same image as `nginx`.

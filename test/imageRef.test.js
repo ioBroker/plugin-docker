@@ -7,6 +7,7 @@ const {
     isDigestRef,
     normalizeImageRef,
     parseImageRef,
+    pullableImageRef,
 } = require('../build/cjs/lib/imageRef');
 const DockerManagerModule = require('../build/cjs/lib/DockerManager');
 const { reconcile } = require('./helpers/reconcile-harness');
@@ -50,6 +51,13 @@ describe('image references', () => {
         assert.equal(normalizeImageRef('nginx'), 'nginx:latest');
         assert.equal(normalizeImageRef(' nginx:1.27 '), 'nginx:1.27');
         assert.equal(normalizeImageRef(`openthread/otbr@${DIGEST}`), `openthread/otbr@${DIGEST}`);
+    });
+
+    it('pulls a digest without the tag', () => {
+        assert.equal(pullableImageRef(`openthread/otbr:latest@${DIGEST}`), `openthread/otbr@${DIGEST}`);
+        assert.equal(pullableImageRef(`openthread/otbr@${DIGEST}`), `openthread/otbr@${DIGEST}`);
+        assert.equal(pullableImageRef('localhost:5000/app'), 'localhost:5000/app:latest');
+        assert.equal(pullableImageRef('nginx:1.27'), 'nginx:1.27');
     });
 
     it('compares Docker Hub names in their short form, and a digest wins over a tag', () => {

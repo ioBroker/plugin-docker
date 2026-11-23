@@ -31,6 +31,7 @@ Pipeline: **Compose file → `ComposeTop` → `ContainerConfig[]` → Docker API
 - **`src/lib/templates.ts`** — `walkTheConfig()` recurses over the whole parsed tree and applies `parseField()` to every string. Syntaxes: `{{config.a.b}}`, `${config.a.b:-default}`, `${config_a_b:-default}` (underscore alias for jsonConfig validators), `${instance}`. If the pattern *is* the whole string, the raw (non-string) value is returned — that is how booleans and numbers survive.
 - **`src/lib/DockerManager.ts`** — all low-level Docker operations: containers, images, networks, volumes, stats, file operations inside volumes, SSH tunneling.
 - **`src/lib/DockerManagerOfOwnContainers.ts`** — orchestrator on top of it: desired-vs-existing reconciliation, volume provisioning, monitoring, stop on unload.
+- **`src/lib/imageRef.ts`** — image references `[registry[:port]/]path[:tag][@digest]`: parsing (the tag is split off at the last `:` after the last `/`), `:latest` normalization, comparison keys (Docker Hub short names, a digest wins over a tag), `imageMatches()` against all tags and digests of an `ImageInfo`, and the conversion of the image lists of the API and the CLI. Never compare images as `` `${repository}:${tag}` `` strings again: that missed images pulled by digest, images with several tags and registries with a port.
 - **`src/types.d.ts`** — every shared interface (`ContainerConfig`, `DockerContainerInspect`, `ContainerInfo`, …). Copied verbatim into both build outputs by `tasks.ts`.
 
 ### Two transports in DockerManager (the most important structural fact)

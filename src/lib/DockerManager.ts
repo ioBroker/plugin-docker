@@ -29,6 +29,14 @@ import { join } from 'node:path';
 import Docker, { type MountPropagation, type MountSettings, type MountType } from 'dockerode';
 import type { PackOptions, Pack } from 'tar-fs';
 import type { ConnectConfig } from 'ssh2';
+import {
+    CLI_IMAGES_FORMAT,
+    imageInfoFromApi,
+    imageInfoFromCli,
+    imageMatches,
+    isDigestRef,
+    normalizeImageRef,
+} from './imageRef';
 
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -510,18 +518,21 @@ export default class DockerManager {
     /**
      * Update the image if a newer version is available
      *
-     * @param image Image name with tag
+     * An image pinned to a digest (`name@sha256:...`) is never updated: the digest names exactly one image.
+     *
+     * @param image Image name with tag or digest
      * @param ignoreIfNotExist If true, do not throw error if image does not exist
      * @returns New image info if image was updated, null if no update was necessary
      */
     async imageUpdate(image: ImageName, ignoreIfNotExist?: boolean): Promise<ImageInfo | null> {
         const list = await this.imageList();
-        if (!image.includes(':')) {
-            image += ':latest';
-        }
-        const existingImage = list.find(it => `${it.repository}:${it.tag}` === image);
+        image = normalizeImageRef(image);
+        const existingImage = list.find(it => imageMatches(it, image));
         if (!existingImage && !ignoreIfNotExist) {
             throw new Error(`Image ${image} not found`);
+        }
+        if (isDigestRef(image)) {
+            return null;
         }
         // Pull the image
         const result = await this.imagePull(image);
@@ -529,7 +540,7 @@ export default class DockerManager {
             throw new Error(`Cannot pull image ${image}: ${result.stderr}`);
         }
         const newList = await this.imageList();
-        const newImage = newList.find(it => `${it.repository}:${it.tag}` === image);
+        const newImage = newList.find(it => imageMatches(it, image));
         if (!newImage) {
             throw new Error(`Image ${image} not found after pull`);
         }
@@ -751,9 +762,7 @@ export default class DockerManager {
 
     /** Pull an image from the registry */
     async imagePull(image: ImageName): Promise<{ stdout: string; stderr: string; images?: ImageInfo[] }> {
-        if (!image.includes(':')) {
-            image += ':latest';
-        }
+        image = normalizeImageRef(image);
         if (this.#dockerode) {
             const stream = await this.#dockerode.pull(image);
             if (!stream) {
@@ -817,7 +826,7 @@ export default class DockerManager {
         try {
             const result = await this.#exec(['pull', image]);
             const images = await this.imageList();
-            if (!images.find(it => `${it.repository}:${it.tag}` === image)) {
+            if (!images.find(it => imageMatches(it, image))) {
                 throw new Error(`Image ${image} not found after pull`);
             }
             return { ...result, images };
@@ -1435,39 +1444,15 @@ export default class DockerManager {
     /** List all images */
     async imageList(): Promise<ImageInfo[]> {
         if (this.#dockerode) {
-            const images = await this.#dockerode.listImages();
-            return images.map(img => {
-                const repoTag = img.RepoTags && img.RepoTags.length ? img.RepoTags[0] : '<none>:<none>';
-                const [repository, tag] = repoTag.split(':');
-                return {
-                    repository,
-                    tag,
-                    id: img.Id.startsWith('sha256:') ? img.Id.substring(7, 19) : img.Id.substring(0, 12),
-                    createdSince: new Date(img.Created * 1000).toISOString(),
-                    size: img.Size,
-                };
-            });
+            const images = await this.#dockerode.listImages({ digests: true });
+            return images.map(img => imageInfoFromApi(img));
         }
         try {
-            const { stdout } = await this.#exec([
-                'images',
-                '--format',
-                '{{.Repository}}:{{.Tag}};{{.ID}};{{.CreatedAt}};{{.Size}}',
-            ]);
+            const { stdout } = await this.#exec(['images', '--digests', '--format', CLI_IMAGES_FORMAT]);
             return stdout
                 .split('\n')
                 .filter(line => line.trim() !== '')
-                .map(line => {
-                    const [repositoryTag, id, createdSince, size] = line.split(';');
-                    const [repository, tag] = repositoryTag.split(':');
-                    return {
-                        repository,
-                        tag,
-                        id,
-                        createdSince,
-                        size: this.#parseSize(size),
-                    };
-                });
+                .map(line => imageInfoFromCli(line, size => this.#parseSize(size)));
         } catch (e) {
             this.log.debug(`Cannot list images: ${e.message}`);
             return [];
@@ -1529,7 +1514,7 @@ export default class DockerManager {
         try {
             const result = await this.#exec(['rmi', imageId]);
             const images = await this.imageList();
-            if (images.find(it => `${it.repository}:${it.tag}` === imageId)) {
+            if (images.find(it => imageMatches(it, imageId))) {
                 return { stdout: '', stderr: `Image ${imageId} still found after deletion`, images };
             }
             return { ...result, images };

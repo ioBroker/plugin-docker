@@ -115,7 +115,8 @@ function inspectFor(cfg) {
  * @param {string} [options.service] which service to reconcile, default: the last one
  * @param {Function} [options.mutate] receives the inspect answer and may change it
  * @param {string} [options.adapterDir] adapter directory, for env_file resolution
- * @returns {Promise<{events: string[], logs: Array<[string, string]>, config: object}>}
+ * @param {object[]} [options.images] answer of `imageList()`, default: one image tagged like the service
+ * @returns {Promise<{events: string[], logs: Array<[string, string]>, config: object, pulls: string[]}>}
  */
 async function reconcile(yaml, options = {}) {
     const configs = composeToContainerConfigs(composeFromYaml.default(yaml));
@@ -126,6 +127,7 @@ async function reconcile(yaml, options = {}) {
 
     const events = [];
     const logs = [];
+    const pulls = [];
     const logger = {
         silly: () => {},
         debug: () => {},
@@ -153,10 +155,12 @@ async function reconcile(yaml, options = {}) {
             cfg.name === prefix || String(cfg.name).startsWith(`${prefix}_`) ? cfg.name : `${prefix}_${cfg.name}`;
 
         manager.containerList = async () => [{ id: 'abc', names: runningName, status: 'running' }];
-        manager.imageList = async () => [
-            { repository: cfg.image.split(':')[0], tag: cfg.image.split(':')[1] || 'latest' },
-        ];
-        manager.imagePull = async () => ({ stdout: '', stderr: '' });
+        manager.imageList = async () =>
+            options.images || [{ repository: cfg.image.split(':')[0], tag: cfg.image.split(':')[1] || 'latest' }];
+        manager.imagePull = async image => {
+            pulls.push(image);
+            return { stdout: '', stderr: '' };
+        };
         manager.networkList = async () => [{ name: 'iob_probe_0' }];
         manager.networkCreate = async () => ({ stdout: '', stderr: '' });
         manager.volumeList = async () =>
@@ -184,7 +188,7 @@ async function reconcile(yaml, options = {}) {
         DockerManager.prototype.init = originalInit;
     }
 
-    return { events, logs, config: cfg };
+    return { events, logs, config: cfg, pulls };
 }
 
 module.exports = { reconcile, inspectFor };

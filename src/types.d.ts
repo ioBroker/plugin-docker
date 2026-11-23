@@ -642,8 +642,14 @@ export type ContainerInfo = {
 };
 
 export type ImageInfo = {
+    /** Repository of the first tag (or digest), `<none>` if the image has neither */
     repository: string;
+    /** First tag, `<none>` if the image has none (e.g. pulled by digest only) */
     tag: string;
+    /** All references of the image by tag, e.g. `['influxdb:2', 'influxdb:2.7']` */
+    tags?: string[];
+    /** All references of the image by digest, e.g. `['openthread/border-router@sha256:5ae1...']` */
+    digests?: string[];
     id: string;
     createdSince: string;
     size: number;

@@ -13,6 +13,7 @@ import type {
     Healthcheck,
 } from '../types';
 import DockerManager from './DockerManager';
+import { imageMatches, imageRefKey, normalizeImageRef } from './imageRef';
 
 const dockerDefaults: Record<string, any> = {
     tty: false,
@@ -143,6 +144,12 @@ function compareConfigs(_desired: ContainerConfig, _existing: ContainerConfig): 
     const existing: ContainerConfig = JSON.parse(JSON.stringify(_existing));
 
     const keys: (keyof ContainerConfig)[] = Object.keys(desired) as Array<keyof ContainerConfig>;
+
+    // `nginx` is `nginx:latest` and `docker.io/library/nginx:latest`; with a digest the tag does not count
+    if (desired.image && existing.image) {
+        desired.image = imageRefKey(desired.image);
+        existing.image = imageRefKey(existing.image);
+    }
 
     // Order mounts, volumes and ports to avoid diffs if only the order is different
     if (desired.mounts) {
@@ -909,9 +916,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
         for (let c = 0; c < this.#ownContainers.length; c++) {
             const container = this.#ownContainers[c];
             if (container.iobEnabled !== false) {
-                if (!container.image.includes(':')) {
-                    container.image += ':latest';
-                }
+                container.image = normalizeImageRef(container.image);
                 if (container.labels?.iobroker !== this.namespace) {
                     container.labels = { ...container.labels, iobroker: this.namespace };
                 }
@@ -992,7 +997,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                     }
 
                     let containerInfo = status.find(it => it.names === container.name);
-                    let image = images.find(it => `${it.repository}:${it.tag}` === container.image);
+                    let image = images.find(it => imageMatches(it, container.image));
                     if (container.iobAutoImageUpdate) {
                         // ensure that the image is actual
                         const newImage = await this.imageUpdate(container.image, true);
@@ -1022,7 +1027,7 @@ export default class DockerManagerOfOwnContainers extends DockerManager {
                         }
                         // Check that the image is available now
                         images = await this.imageList();
-                        image = images.find(it => `${it.repository}:${it.tag}` === container.image);
+                        image = images.find(it => imageMatches(it, container.image));
                         if (!image) {
                             this.log.warn(
                                 `Image ${container.image} for own container ${container.name} not found after pull`,

@@ -166,6 +166,25 @@ Fallback syntax `${varName:-default}` is supported; the default is used if the r
 
 If `iobAutoImageUpdate=true`, the plugin periodically (or on trigger) checks the registry for a newer tag (same literal tag as declared). On change: pulls, stops container (respecting stop policy), recreates with existing settings, and restarts.
 
+## Pinning an Image to a Digest
+
+An image can be referenced by its digest instead of a tag, so that every installation runs exactly the same image -
+e.g. when the service has to fit to firmware or data of the adapter, or when the project publishes only `latest`:
+
+```yaml
+services:
+    otbr:
+        image: 'openthread/border-router@sha256:5ae17855e42000abce4420098c3cc0f16d8b7cf3745ee091810afad75b37d1cc'
+        # or with a tag for the reader, the digest wins: 'openthread/border-router:v2026.11.0@sha256:5ae1...'
+```
+
+- The image is pulled once (by digest, the tag is not sent); `iobAutoImageUpdate` has no effect, a digest never gets a newer image.
+- A new version of the adapter with another digest in its compose file recreates the container with the new image.
+- Get the digest of an image with `docker buildx imagetools inspect openthread/border-router:v2026.11.0` (the `Digest` of the
+  index, valid for all architectures) or from the registry website.
+
+Images are found by any of their tags and digests, and `docker.io/library/nginx` is the same image as `nginx`.
+
 ## Backups
 
 Volumes listed in `iobBackup` are tagged for inclusion in ioBroker backup routines. Ensure they are named volumes (not anonymous or host bind mounts) for reliable restore.
@@ -244,6 +263,12 @@ starting behind its socket. A daemon that does not answer by then counts as not 
 -->
 
 ## Changelog
+### **WORK IN PROGRESS**
+- (@GermanBluefox) Images can be pinned to a digest: `image: 'name@sha256:...'` (or `name:tag@sha256:...`). Before, the plugin looked for the image as `repository:tag` only, did not find an image pulled by digest, reported `not found after pull` and skipped the container. A pinned image is never updated by `iobAutoImageUpdate`; another digest in the compose file recreates the container
+- (@GermanBluefox) An image with several tags is found by each of them. With the Docker API (socket or TCP) only the first tag reported by Docker was compared, so `influxdb:2` was not found when the same image was also tagged `influxdb:2.7` and Docker listed that one first - the container was skipped with `not found after pull`
+- (@GermanBluefox) Images of a registry with a port (`localhost:5000/app:2`) are found: the name was split at the first `:`, the port was taken for the tag. Such an image also got no `:latest` when it had no tag
+- (@GermanBluefox) `ImageInfo` has the new fields `tags` and `digests` with all references of the image; `repository` and `tag` stay as before
+
 ### 1.3.1 (2026-11-02)
 - (@GermanBluefox) A Docker daemon that accepts the connection but never answers no longer blocks the start of the manager forever - and with it the containers of the adapter and the `checkDocker` control, which waited for that start. The version probe, the probe of the ports 2375/2376 and `docker ps` now give up after 2 minutes; the open request is closed. The limit is generous on purpose: at boot, systemd accepts the connection on `docker.socket` before dockerd runs, and a slow start must not count as "no Docker"
 

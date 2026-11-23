@@ -263,7 +263,7 @@ starting behind its socket. A daemon that does not answer by then counts as not 
 -->
 
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.4.0 (2026-11-23)
 - (@GermanBluefox) Images can be pinned to a digest: `image: 'name@sha256:...'` (or `name:tag@sha256:...`). Before, the plugin looked for the image as `repository:tag` only, did not find an image pulled by digest, reported `not found after pull` and skipped the container. A pinned image is never updated by `iobAutoImageUpdate`; another digest in the compose file recreates the container
 - (@GermanBluefox) An image with several tags is found by each of them. With the Docker API (socket or TCP) only the first tag reported by Docker was compared, so `influxdb:2` was not found when the same image was also tagged `influxdb:2.7` and Docker listed that one first - the container was skipped with `not found after pull`
 - (@GermanBluefox) Images of a registry with a port (`localhost:5000/app:2`) are found: the name was split at the first `:`, the port was taken for the tag. Such an image also got no `:latest` when it had no tag
